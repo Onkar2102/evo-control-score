@@ -1,13 +1,13 @@
 # evo-control-score
 
-This repository contains code for project - Evolutionary Search for Toxicity Control in LLMs using Context-aware Scoring.
+This repository contains code for project - **E**volutionary **O**ptimization of **S**earch Space for **T**oxicity Control using **C**ontext-**a**ware Scoring **M**etrics in **L**arge **L**anguage **M**odels
 
 ## Setup Instructions
 
 ##### To clone the github repositories
 ```
-git clone https://github.com/Onkar2102/evo-control-score.git
-cd evo-tox-llm
+git clone https://github.com/Onkar2102/eost-cam-llm.git
+cd eost-cam-llm
 ```
 
 ##### To work with the latest dev code:
@@ -31,11 +31,6 @@ git checkout feature/embedding
 
 [Bhaskar]
 git checkout feature/metric-engine
-```
-
-##### To merge with develop branch
-```
-git merge develop
 ```
 
 ##### Commit and Push to feature branch
