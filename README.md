@@ -1,6 +1,6 @@
-# evo-control-score
+# eost-cam-llm
 
-This repository contains code for project - **E**volutionary **O**ptimization of **S**earch Space for **T**oxicity Control using **C**ontext-**a**ware Scoring **M**etrics in **L**arge **L**anguage **M**odels
+**E**volutionary **O**ptimization of **S**earch Space for **T**oxicity Control using **C**ontext-**a**ware Scoring **M**etrics in **L**arge **L**anguage **M**odels
 
 ## Setup Instructions
 
