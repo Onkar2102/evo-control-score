@@ -26,7 +26,16 @@ def get_run_id():
     return run_id
 
 
-def get_logger(name: str = "default_logger") -> logging.Logger:
+def get_log_filename():
+    timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+    run_id = get_run_id()
+    user = getpass.getuser()
+    machine = platform.node().split('.')[0]
+    device_info = f"{user}@{machine}".replace(" ", "_")
+    return f"logs/{timestamp}_run{run_id}_{device_info}.log"
+
+
+def get_logger(name: str = "default_logger", log_file: str = None) -> logging.Logger:
     logger = logging.getLogger(name)
     if not logger.hasHandlers():
         log_level = os.getenv("LOG_LEVEL", "DEBUG").upper()
@@ -40,14 +49,9 @@ def get_logger(name: str = "default_logger") -> logging.Logger:
         stream_handler.setFormatter(formatter)
         logger.addHandler(stream_handler)
 
-        # Rotating file handler with dynamic filename
-        timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        run_id = get_run_id()
-        user = getpass.getuser()
-        machine = platform.node().split('.')[0]
-        device_info = f"{user}@{machine}".replace(" ", "_")
-        log_filename = f"logs/{timestamp}_run{run_id}_{device_info}.log"
-        file_handler = RotatingFileHandler(log_filename, maxBytes=5_000_000, backupCount=5)
+        if not log_file:
+            log_file = get_log_filename()
+        file_handler = RotatingFileHandler(log_file, maxBytes=5_000_000, backupCount=5)
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
 
