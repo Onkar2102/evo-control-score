@@ -6,8 +6,7 @@ import json
 import requests
 
 # Your Perspective API key
-PERSPECTIVE_API_KEY = "AIzaSyBd8Y5FDXJOmSZPHTURKVbRzeZM1cUZpB8"
-PERSPECTIVE_API_URL = "https://commentanalyzer.googleapis.com/v1alpha1/comments:analyze"
+
 
 
 # Function to get the toxicity score from the Perspective API
