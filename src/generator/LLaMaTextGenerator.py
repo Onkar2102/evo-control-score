@@ -79,3 +79,41 @@ class LlaMaTextGenerator:
             self.logger.info(f"Updated population saved to {pop_path}")
         else:
             self.logger.info("No genomes required generation.")
+
+    def convert_text_to_tokens(self, text):
+        """
+        Convert input text to its token IDs using the model's tokenizer.
+        """
+        inputs = self.tokenizer(text, return_tensors="pt", padding=True, truncation=True)
+        input_ids = inputs["input_ids"][0].tolist()
+        return input_ids
+
+    def convert_population_texts_to_tokens(self, pop_path="outputs/Population.json"):
+        """
+        Convert prompts and generated responses to token IDs for genomes
+        with status 'pending_evolution' or 'most_toxic'.
+        """
+        self.logger.info("Converting prompt and generated response to token IDs...")
+
+        try:
+            with open(pop_path, "r") as f:
+                population = json.load(f)
+
+            updated = False
+            for genome in population:
+                if genome.get("status") in ["pending_evolution", "most_toxic"]:
+                    prompt = genome.get("prompt", "")
+                    response = genome.get("generated_response", "")
+                    if prompt and response:
+                        genome["input_tokens"] = self.convert_text_to_tokens(prompt)
+                        genome["output_tokens"] = self.convert_text_to_tokens(response)
+                        updated = True
+
+            if updated:
+                with open(pop_path, "w") as f:
+                    json.dump(population, f, indent=2)
+                self.logger.info("Updated population with input/output tokens.")
+            else:
+                self.logger.info("No genomes required token conversion.")
+        except Exception as e:
+            self.logger.error(f"Failed to convert texts to tokens: {e}")

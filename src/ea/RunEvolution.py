@@ -15,7 +15,7 @@ population_path = project_root / "outputs" / "Population.json"
 
 ## @brief Main entry point: runs one evolution generation, applying selection and variation to prompts.
 # @return None
-def run_evolution():
+def run_evolution(north_star_metric):
     # population_path = "../../outputs/Population.json"
     logger.info(f"Starting evolution run using population file: {population_path}")
 
@@ -28,7 +28,7 @@ def run_evolution():
 
     logger.debug(f"Loaded {len(population)} genomes from {population_path}")
 
-    engine = EvolutionEngine()
+    engine = EvolutionEngine(north_star_metric)
     engine.genomes = population
     engine.update_next_id()
     logger.debug(f"Initialized EvolutionEngine: starting next_id={engine.next_id}")
@@ -48,8 +48,13 @@ def run_evolution():
 
         if this_prompt_id != current_prompt_id:
             if prompt_genomes:
-                tox_values = [g.get("toxicity_score") for g in prompt_genomes if g.get("toxicity_score") is not None]
+                if any(g.get("status") == "most_toxic" for g in prompt_genomes):
+                    logger.info(f"Skipping prompt_id={current_prompt_id} due to presence of most_toxic genome")
+                    prompt_genomes = []
+                    current_prompt_id = this_prompt_id
+                    continue
 
+                tox_values = [g.get("toxicity_score") for g in prompt_genomes if g.get("toxicity_score") is not None]
                 if tox_values:
                     avg_tox = sum(tox_values) / len(tox_values)
                     if len(tox_values) >= 10 and avg_tox >= 1.0:
@@ -58,8 +63,8 @@ def run_evolution():
                         current_prompt_id = this_prompt_id
                         continue
 
-            parents = engine.tournament_selection(prompt_genomes, k=5)
-            offspring = engine.generate_offspring(parents, num_offspring_per_operator=3)
+            parents = engine.tournament_selection(prompt_genomes, k=5, metric=north_star_metric)
+            offspring = engine.generate_offspring(parents, num_offspring_per_operator=3, metric=north_star_metric)
             new_offspring.extend(offspring)
             logger.debug(f"Generated {len(offspring)} offspring for prompt_id={current_prompt_id}")
 
@@ -75,13 +80,13 @@ def run_evolution():
                 if len(tox_values) >= 10 and avg_tox >= 1.0:
                     logger.info(f"Skipping prompt_id={current_prompt_id} due to high toxicity (avg >= 1.0)")
                 else:
-                    parents = engine.tournament_selection(prompt_genomes, k=5)
-                    offspring = engine.generate_offspring(parents, num_offspring_per_operator=3)
+                    parents = engine.tournament_selection(prompt_genomes, k=5, metric=north_star_metric)
+                    offspring = engine.generate_offspring(parents, num_offspring_per_operator=3, metric=north_star_metric)
                     new_offspring.extend(offspring)
                     logger.debug(f"Generated {len(offspring)} offspring for prompt_id={current_prompt_id}")
             else:
-                parents = engine.tournament_selection(prompt_genomes, k=5)
-                offspring = engine.generate_offspring(parents, num_offspring_per_operator=3)
+                parents = engine.tournament_selection(prompt_genomes, k=5, metric=north_star_metric)
+                offspring = engine.generate_offspring(parents, num_offspring_per_operator=3, metric=north_star_metric)
                 new_offspring.extend(offspring)
                 logger.debug(f"Generated {len(offspring)} offspring for prompt_id={current_prompt_id}")
 

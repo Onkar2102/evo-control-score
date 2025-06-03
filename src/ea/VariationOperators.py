@@ -3,6 +3,7 @@
 # @brief Abstract base class defining the interface for all variation operators in the evolutionary pipeline.
 
 from abc import ABC, abstractmethod
+from typing import List
 import logging
 logger = logging.getLogger(__name__)
 
@@ -23,9 +24,9 @@ class VariationOperator(ABC):
 
     ## @brief Applies the variation to the input text.
     # @param text Input prompt string to be mutated.
-    # @return Modified output string.
+    # @return List of modified output strings (variants).
     @abstractmethod
-    def apply(self, text: str) -> str:
+    def apply(self, text: str) -> List[str]:
         pass
 
     ## @brief Returns the operator’s name and type as a string.
