@@ -1,46 +1,81 @@
 import os
-from dotenv import load_dotenv
-from transformers import AutoTokenizer, AutoModelForCausalLM
+import json
 import torch
-from generator.Generators import TextGenerator
+import yaml
+import random
+import numpy as np
+from transformers import AutoTokenizer, AutoModelForCausalLM
 from utils.logging import get_logger
 
-load_dotenv()
-LOGGER = get_logger("LLaMaTextGenerator")
+# torch.manual_seed(42)
+# random.seed(42)
+# np.random.seed(42)
+# if torch.cuda.is_available():
+#     torch.cuda.manual_seed_all(42)
 
-class LlamaTextGenerator(TextGenerator):
-    def __init__(self, config: dict):
-        super().__init__(config["name"])
-        self.model_name = config["name"]
-        self.args = config.get("generation_args", {})
+class LlaMaTextGenerator:
+    def __init__(self, model_key="llama", config_path="config/modelConfig.yaml", log_file=None):
+        self.logger = get_logger("LLaMaTextGenerator", log_file)
 
-        self.tokenizer, self.model = self._load_model_and_tokenizer(self.model_name)
+        # Load config
+        with open(config_path, "r") as f:
+            config = yaml.safe_load(f)
+        if model_key not in config:
+            raise ValueError(f"Model '{model_key}' not found in configuration.")
+        self.model_cfg = config[model_key]
+
+        self.logger.info(f"Loading LLaMA model: {self.model_cfg['name']}")
+        self.tokenizer = AutoTokenizer.from_pretrained(self.model_cfg["name"], legacy=False)
+        self.model = AutoModelForCausalLM.from_pretrained(self.model_cfg["name"])
         self.tokenizer.pad_token = self.tokenizer.eos_token
         self.model.to("cuda" if torch.cuda.is_available() else "cpu")
+        self.model.eval()
 
-    def _load_model_and_tokenizer(self, model_name):
-        hf_token = os.getenv("HF_TOKEN") or os.getenv("HF_API_TOKEN")
-        LOGGER.debug(f"Using HuggingFace token: {'FOUND' if hf_token else 'NOT FOUND'}")
+        self.generation_args = self.model_cfg.get("generation_args", {})
 
-        LOGGER.debug(f"Loading tokenizer for model: {model_name}")
-        tokenizer = AutoTokenizer.from_pretrained(model_name, legacy=False, token=hf_token)
+        # Prompt template support
+        tmpl = self.model_cfg.get("prompt_template", {})
+        self.prompt_format = tmpl.get("format", "{{prompt}}")
+        self.user_prefix = tmpl.get("user_prefix", "")
+        self.assistant_prefix = tmpl.get("assistant_prefix", "")
 
-        LOGGER.debug(f"Loading model for: {model_name}")
-        model = AutoModelForCausalLM.from_pretrained(model_name, token=hf_token)
+    def format_prompt(self, raw_prompt):
+        return (
+            self.prompt_format
+            .replace("{{user_prefix}}", self.user_prefix)
+            .replace("{{assistant_prefix}}", self.assistant_prefix)
+            .replace("{{prompt}}", raw_prompt)
+        )
 
-        return tokenizer, model
+    def generate_response(self, prompt):
+        formatted = self.format_prompt(prompt)
+        inputs = self.tokenizer(formatted, return_tensors="pt", padding=True, truncation=True).to(self.model.device)
+        with torch.no_grad():
+            outputs = self.model.generate(**inputs, **self.generation_args)
+        decoded = self.tokenizer.decode(outputs[0], skip_special_tokens=True).strip()
+        # return decoded, formatted
+        llm_reply = decoded.replace(formatted + "\n", "").strip()
+        return llm_reply.split('Adult 2:')[-1].strip()
 
-    def generate(self, prompt: str) -> str:
-        try:
-            LOGGER.info(f"Generating text with model {self.model_name}")
-            LOGGER.debug(f"Prompt: {prompt}")
-            inputs = self.tokenizer(prompt, return_tensors="pt", padding=True, truncation=True).to(self.model.device)
-            with torch.no_grad():
-                output = self.model.generate(**inputs, **self.args)
-            LOGGER.debug(f"Raw output tokens: {output}")
-            response = self.tokenizer.decode(output[0], skip_special_tokens=True).strip()
-            LOGGER.debug(f"Decoded response: {response}")
-            return response
-        except Exception as e:
-            LOGGER.error(f"Text generation failed with model {self.model_name}: {e}")
-            raise RuntimeError(f"Generation failed: {e}") from e
+    def process_population(self, pop_path="outputs/Population.json"):
+        with open(pop_path, "r") as f:
+            population = json.load(f)
+
+        updated = False
+        for genome in population:
+            if genome.get("status") == "pending_generation":
+                prompt = genome.get("prompt", "")
+                self.logger.debug(f"Generating for genome ID {genome['id']} | prompt_id {genome['prompt_id']}")
+                response = self.generate_response(prompt)
+                genome["generated_response"] = response
+                genome["status"] = "pending_evaluation"
+                genome["model_provider"] = self.model_cfg.get("provider", "")
+                genome["model_name"] = self.model_cfg.get("name", "")
+                updated = True
+
+        if updated:
+            with open(pop_path, "w") as f:
+                json.dump(population, f, indent=2)
+            self.logger.info(f"Updated population saved to {pop_path}")
+        else:
+            self.logger.info("No genomes required generation.")

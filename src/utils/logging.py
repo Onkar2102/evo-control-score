@@ -9,21 +9,24 @@ import json
 
 def get_run_id():
     log_index_file = "logs/log_index.json"
+    today = datetime.datetime.now().strftime("%Y%m%d")
+
     if not os.path.exists("logs"):
         os.makedirs("logs")
+
     if os.path.exists(log_index_file):
         with open(log_index_file, "r") as f:
             log_data = json.load(f)
     else:
         log_data = {}
 
-    run_id = log_data.get("last_run_id", 0) + 1
-    log_data["last_run_id"] = run_id
+    today_run_id = log_data.get(today, 0) + 1
+    log_data[today] = today_run_id
 
     with open(log_index_file, "w") as f:
         json.dump(log_data, f)
 
-    return run_id
+    return today_run_id
 
 
 def get_log_filename():

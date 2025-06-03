@@ -1,0 +1,22 @@
+llama:
+  provider: "huggingface"                     # Possible: "huggingface", "openai", "anthropic", "custom"
+  name: "meta-llama/Llama-3.2-3B-instruct"    # HuggingFace model path or ID
+  strategy: "local"                           # Possible: "local", "api", "gpu_cluster"
+  task_type: "text-generation"                # Possible: "text-generation", "chat-completion"
+  max_batch_size: 4                           # Integer value indicating max number of prompts per batch
+  generation_args:
+    max_new_tokens: 4096                      # Max tokens to generate
+    do_sample: false                           # true = use sampling; false = deterministic (e.g., greedy or beam)
+    # num_beams: 4
+    temperature: 1.0                          # Float, controls randomness; typical range [0.1 - 2.0]
+    top_k: 50                                 # Integer, limits next-token choices to top K most likely
+    top_p: 1.0                                # Float, nucleus sampling threshold; common values: 0.8 - 1.0
+    num_return_sequences: 1                   # Number of completions to generate per prompt
+  prompt_template:
+    style: "chat"                             # Possible: "chat", "instruction", "plain"
+    user_prefix: "Adult 1:"                   # Text prefix for user input (can be any role/persona)
+    assistant_prefix: "Adult 2:"              # Text prefix for model response (can be any role/persona)
+    format: |
+      {{user_prefix}} {{prompt}}
+      {{assistant_prefix}}                    
+    # Template using Jinja-style placeholders
