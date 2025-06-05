@@ -14,6 +14,7 @@ from utils.logging import get_logger
 #     torch.cuda.manual_seed_all(42)
 
 class LlaMaTextGenerator:
+    _MODEL_CACHE = {}
     def __init__(self, model_key="llama", config_path="config/modelConfig.yaml", log_file: str = None):
         print(log_file)
         self.log_file = log_file
@@ -28,12 +29,25 @@ class LlaMaTextGenerator:
             raise ValueError(f"Model '{model_key}' not found in configuration.")
         self.model_cfg = config[model_key]
 
-        self.logger.info(f"Loading LLaMA model: {self.model_cfg['name']}")
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_cfg["name"], legacy=False)
-        self.model = AutoModelForCausalLM.from_pretrained(self.model_cfg["name"])
-        self.tokenizer.pad_token = self.tokenizer.eos_token
-        self.model.to("cuda" if torch.cuda.is_available() else "cpu")
-        self.model.eval()
+        model_name = self.model_cfg["name"]
+        if model_name not in self._MODEL_CACHE:
+            self.logger.info(f"Loading LLaMA model: {model_name}")
+            tokenizer = AutoTokenizer.from_pretrained(model_name, legacy=False)
+            model = AutoModelForCausalLM.from_pretrained(model_name)
+            tokenizer.pad_token = tokenizer.eos_token
+            if torch.cuda.is_available():
+                device = "cuda"
+            elif torch.backends.mps.is_available():
+                device = "mps"
+            else:
+                device = "cpu"
+            self.logger.info(f"Model loaded on device: {device}")
+            model.to(device)
+            model.eval()
+            self._MODEL_CACHE[model_name] = (tokenizer, model)
+        else:
+            self.logger.info(f"Using cached LLaMA model: {model_name}")
+        self.tokenizer, self.model = self._MODEL_CACHE[model_name]
 
         self.generation_args = self.model_cfg.get("generation_args", {})
 
@@ -84,6 +98,22 @@ class LlaMaTextGenerator:
         else:
             self.logger.info("No genomes required generation.")
 
+    def generate_for_genome(self, genome):
+        """
+        Generate a response for a single genome dictionary in-place.
+        """
+        prompt = genome.get("prompt", "")
+        self.logger.debug(f"Generating for genome ID {genome['id']} | prompt_id {genome['prompt_id']}")
+        try:
+            response = self.generate_response(prompt)
+            genome["generated_response"] = response
+            genome["status"] = "pending_evaluation"
+            genome["model_provider"] = self.model_cfg.get("provider", "")
+            genome["model_name"] = self.model_cfg.get("name", "")
+        except Exception as e:
+            self.logger.error(f"Failed to generate for genome ID {genome['id']}: {e}")
+            raise e
+
     def convert_text_to_tokens(self, text):
         """
         Convert input text to its token IDs using the model's tokenizer.
@@ -121,6 +151,8 @@ class LlaMaTextGenerator:
                 self.logger.info("No genomes required token conversion.")
         except Exception as e:
             self.logger.error(f"Failed to convert texts to tokens: {e}")
+
+
 
     def paraphrase_text(self, text: str, num_variants: int = 10) -> list:
         """

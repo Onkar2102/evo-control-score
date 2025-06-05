@@ -2,7 +2,7 @@ import random
 from typing import List, Dict
 from .TextVariationOperators import get_applicable_operators
 from utils.logging import get_logger
-
+from itertools import combinations
 
 class EvolutionEngine:
 
@@ -106,15 +106,27 @@ class EvolutionEngine:
             except Exception as e:
                 self.logger.error(f"[Mutation Error] {op.name}: {e}")
 
+        # Deduplicate and save unique mutation offspring to population
+        unique_mutation_offspring = {}
+        for child in offspring:
+            key = child["prompt"].strip().lower()
+            if key not in unique_mutation_offspring:
+                unique_mutation_offspring[key] = child
+
+        self.genomes.extend(unique_mutation_offspring.values())
+        self.logger.debug(f"Saved {len(unique_mutation_offspring)} unique mutation variants to the population.")
+
         if crossover_parents:
             crossover_operators = get_applicable_operators(len(crossover_parents), self.north_star_metric)
             self.logger.debug(f"Running crossover on prompt_id={prompt_id} with {len(crossover_parents)} parents and {len(crossover_operators)} operators.")
             for op in crossover_operators:
                 if op.operator_type != "crossover":
                     continue
-                for parent in crossover_parents:
+
+                for parent_pair in combinations(crossover_parents, 2):  # All pairs of parents
                     try:
-                        variants = op.apply(parent["prompt"])
+                        prompts = [p["prompt"] for p in parent_pair]
+                        variants = op.apply(prompts)  # Send both prompts
                         for vp in variants:
                             norm_vp = vp.strip().lower()
                             if norm_vp in existing_prompts:
@@ -129,13 +141,13 @@ class EvolutionEngine:
                                 "generated_response": None,
                                 "moderation_result": None,
                                 "operator": op.name,
-                                "parents": [parent["id"]],
-                                "generation": parent["generation"] + 1,
+                                "parents": [p["id"] for p in parent_pair],
+                                "generation": max(p["generation"] for p in parent_pair) + 1,
                                 "status": "pending_generation",
                                 "creation_info": {
                                     "type": "crossover",
                                     "operator": op.name,
-                                    "source_generation": parent["generation"]
+                                    "source_generation": max(p["generation"] for p in parent_pair)
                                 }
                             }
                             self.next_id += 1
@@ -143,6 +155,15 @@ class EvolutionEngine:
                             self.logger.debug(f"Crossover variant prompt: '{vp[:60]}...'")
                             offspring.append(child)
                     except Exception as e:
-                        self.logger.error(f"[Crossover Error] {op.name}: {e}")
+                        self.logger.error(f"[Crossover Error] {op.name} with parents {[p['id'] for p in parent_pair]}: {e}")
 
-        return offspring
+        # Deduplicate and save unique crossover offspring to population
+        unique_crossover_offspring = {}
+        for child in offspring:
+            key = child["prompt"].strip().lower()
+            if key not in unique_crossover_offspring:
+                unique_crossover_offspring[key] = child
+
+        self.genomes.extend(unique_crossover_offspring.values())
+        self.logger.debug(f"Saved {len(unique_crossover_offspring)} unique crossover variants to the population.")
+
