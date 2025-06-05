@@ -14,8 +14,12 @@ from utils.logging import get_logger
 #     torch.cuda.manual_seed_all(42)
 
 class LlaMaTextGenerator:
-    def __init__(self, model_key="llama", config_path="config/modelConfig.yaml", log_file=None):
-        self.logger = get_logger("LLaMaTextGenerator", log_file)
+    def __init__(self, model_key="llama", config_path="config/modelConfig.yaml", log_file: str = None):
+        print(log_file)
+        self.log_file = log_file
+        print(self.log_file)
+        self.logger = get_logger("LLaMaTextGenerator", self.log_file)
+        self.logger.debug(f"Logger correctly initialized with log_file: {self.log_file}")
 
         # Load config
         with open(config_path, "r") as f:
@@ -117,3 +121,28 @@ class LlaMaTextGenerator:
                 self.logger.info("No genomes required token conversion.")
         except Exception as e:
             self.logger.error(f"Failed to convert texts to tokens: {e}")
+
+    def paraphrase_text(self, text: str, num_variants: int = 10) -> list:
+        """
+        Generate at most `num_variants` paraphrased versions of the input text.
+        """
+        self.logger.info(f"Generating up to {num_variants} paraphrased variants for input text.")
+
+        instruction = f"Paraphrase the following statement in different ways, keeping the meaning intact:\n{text}"
+        paraphrases = set()
+
+        for i in range(num_variants * 2):  # Extra loops to ensure we get enough unique outputs
+            formatted_prompt = self.format_prompt(instruction)
+            inputs = self.tokenizer(formatted_prompt, return_tensors="pt", padding=True, truncation=True).to(self.model.device)
+            with torch.no_grad():
+                outputs = self.model.generate(**inputs, **self.generation_args)
+            decoded = self.tokenizer.decode(outputs[0], skip_special_tokens=True).strip()
+            generated = decoded.replace(formatted_prompt + "\n", "").strip()
+            if generated.lower() != text.lower():
+                paraphrases.add(generated)
+            if len(paraphrases) >= num_variants:
+                break
+
+        paraphrase_list = list(paraphrases)
+        self.logger.info(f"Generated {len(paraphrase_list)} unique paraphrased variants.")
+        return paraphrase_list if paraphrase_list else [text]

@@ -1,8 +1,15 @@
 {
     "cSpell.words": [
         "dotenv",
+        "Holi",
         "huggingface",
         "levelname",
-        "mistralai"
-    ]
+        "mistralai",
+        "moderations",
+        "syns",
+        "synsets",
+        "tmpl",
+        "wordnet"
+    ],
+    "python.analysis.autoImportCompletions": true
 }

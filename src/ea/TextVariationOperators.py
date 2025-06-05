@@ -1,7 +1,3 @@
-## @file TextVariationOperators.py
-# @author Onkar Shelar (os9660@rit.edu)
-# @brief Concrete mutation operators for prompt-level variations in evolutionary search.
-
 import random
 import torch
 import spacy
@@ -18,85 +14,36 @@ from huggingface_hub import snapshot_download
 from .VariationOperators import VariationOperator
 from dotenv import load_dotenv
 from itertools import combinations, product
-import logging
-logger = logging.getLogger(__name__)
+from utils.logging import get_logger
 
 
 from generator.LLaMaTextGenerator import LlaMaTextGenerator
-generator = LlaMaTextGenerator(log_file=None)  #
+generator = LlaMaTextGenerator(log_file=None)
 
 load_dotenv()
 
 nlp = spacy.load("en_core_web_sm")
 
-SYNONYMS = {
-    "good": ["great", "excellent", "nice"],
-    "bad": ["terrible", "awful", "poor"],
-    "people": ["individuals", "humans", "persons"],
-    "problem": ["issue", "challenge", "difficulty"],
-    "happy": ["joyful", "content", "cheerful"],
-    "sad": ["unhappy", "miserable", "gloomy"],
-}
-
-# ## @class SynonymReplacementOperator
-# # @brief Replaces selected words with synonyms from a predefined dictionary.
-# class SynonymReplacementOperator(VariationOperator):
-#     def __init__(self):
-#         super().__init__("SynonymReplacement", "mutation", "Replaces a word with a synonym from a simple dictionary.")
-#         logger.debug(f"Initialized operator: {self.name}")
-
-#     def apply(self, text: str) -> str:
-#         words = text.split()
-#         candidates = [i for i, w in enumerate(words) if w.lower() in SYNONYMS]
-#         if not candidates:
-#             return text
-#         idx = random.choice(candidates)
-#         word = words[idx].lower()
-#         words[idx] = random.choice(SYNONYMS[word])
-#         logger.debug(f"{self.name}: Replaced word at index {idx} with '{words[idx]}'")
-#         return " ".join(words)
-
-## @class RandomDeletionOperator
-# @brief Deletes a randomly selected word from the input text.
 class RandomDeletionOperator(VariationOperator):
-    def __init__(self):
+    def __init__(self, log_file=None):
         super().__init__("RandomDeletion", "mutation", "Deletes a random word.")
-        logger.debug(f"Initialized operator: {self.name}")
-
-    # def apply(self, text: str) -> str:
-    #     words = text.split()
-    #     if len(words) <= 1:
-    #         return text
-    #     idx = random.randint(0, len(words) - 1)
-    #     del words[idx]
-    #     logger.debug(f"{self.name}: Deleted word at index {idx}")
-    #     return " ".join(words)
+        self.logger = get_logger(self.name, log_file)
+        self.logger.debug(f"Initialized operator: {self.name}")
     
     def apply(self, text: str) -> List[str]:
         words = text.split()
         if len(words) <= 1:
             return [text]
-        variants = []
-        for idx in range(len(words)):
-            variant = words[:idx] + words[idx+1:]
-            variants.append(" ".join(variant))
-        return variants
+        idx = random.randint(0, len(words) - 1)
+        variant = words[:idx] + words[idx+1:]
+        self.logger.debug(f"{self.name}: Deleted word at index {idx} from: '{text[:60]}...'")
+        return [" ".join(variant)]
 
-## @class WordShuffleOperator
-# @brief Swaps two adjacent words in the input text.
 class WordShuffleOperator(VariationOperator):
-    def __init__(self):
+    def __init__(self, log_file=None):
         super().__init__("WordShuffle", "mutation", "Swaps two adjacent words.")
-        logger.debug(f"Initialized operator: {self.name}")
-
-    # def apply(self, text: str) -> str:
-    #     words = text.split()
-    #     if len(words) < 2:
-    #         return text
-    #     idx = random.randint(0, len(words) - 2)
-    #     words[idx], words[idx + 1] = words[idx + 1], words[idx]
-    #     logger.debug(f"{self.name}: Swapped words at indices {idx} and {idx + 1}")
-    #     return " ".join(words)
+        self.logger = get_logger(self.name, log_file)
+        self.logger.debug(f"Initialized operator: {self.name}")
     
     def apply(self, text: str) -> List[str]:
         words = text.split()
@@ -107,129 +54,75 @@ class WordShuffleOperator(VariationOperator):
             swapped = words[:]
             swapped[i], swapped[i + 1] = swapped[i + 1], swapped[i]
             variants.append(" ".join(swapped))
-        logger.debug(f"{self.name}: Generated {len(variants)} variants by adjacent swaps.")
+        self.logger.debug(f"{self.name}: Generated {len(variants)} variants by adjacent swaps from: '{text[:60]}...'")
         return variants
         
         
 
-# ## @class CharacterSwapOperator
-# # @brief Swaps two characters in a randomly selected word.
-# class CharacterSwapOperator(VariationOperator):
-#     def __init__(self):
-#         super().__init__("CharacterSwap", "mutation", "Swaps two characters in a random word.")
-#         logger.debug(f"Initialized operator: {self.name}")
-
-#     def apply(self, text: str) -> str:
-#         words = text.split()
-#         idx = random.randint(0, len(words) - 1)
-#         word = words[idx]
-#         if len(word) < 2:
-#             return text
-#         chars = list(word)
-#         j = random.randint(0, len(chars) - 2)
-#         chars[j], chars[j + 1] = chars[j + 1], chars[j]
-#         words[idx] = "".join(chars)
-#         logger.debug(f"{self.name}: Swapped characters at positions {j} and {j + 1} in word index {idx}")
-#         return " ".join(words)
-
-## @class POSAwareSynonymReplacement
-# @brief Uses spaCy POS tags and WordNet to replace a word with a context-aware synonym.
 class POSAwareSynonymReplacement(VariationOperator):
-    def __init__(self):
-        super().__init__("POSAwareSynonymReplacement", "mutation", "WordNet synonym replacement based on spaCy POS.")
-        logger.debug(f"Initialized operator: {self.name}")
-
-    # def apply(self, text: str) -> str:
-    #     for _ in range(3):
-    #         doc = nlp(text)
-    #         words = text.split()
-    #         if len(words) != len(doc):
-    #             words = [t.text for t in doc]
-
-    #         replacements = []
-    #         for token in doc:
-    #             if token.pos_ in {"ADJ", "VERB", "NOUN", "ADV"}:
-    #                 wn_pos = {"ADJ": wn.ADJ, "VERB": wn.VERB, "NOUN": wn.NOUN, "ADV": wn.ADV}[token.pos_]
-    #                 synonyms = {
-    #                     lemma.name().replace("_", " ")
-    #                     for syn in wn.synsets(token.text, pos=wn_pos)
-    #                     for lemma in syn.lemmas()
-    #                     if lemma.name().lower() != token.text.lower()
-    #                 }
-    #                 if synonyms:
-    #                     replacements.append((token.i, random.choice(list(synonyms))))
-
-    #         if replacements:
-    #             i, replacement = random.choice(replacements)
-    #             if i < len(words):
-    #                 mutated = words.copy()
-    #                 mutated[i] = replacement
-    #                 logger.debug(f"{self.name}: Replaced token at index {i} with '{replacement}'")
-    #                 result = " ".join(mutated)
-    #                 if result.lower().strip() != text.lower().strip():
-    #                     return result
-
-    #     return text
+    def __init__(self, log_file=None):
+        super().__init__("POSAwareSynonymReplacement", "mutation", "BERT-based synonym replacement based on spaCy POS.")
+        self.logger = get_logger(self.name, log_file)
+        self.logger.debug(f"Initialized operator: {self.name}")
+        # BERT tokenizer/model for MLM
+        self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
+        self.model = BertForMaskedLM.from_pretrained("bert-base-uncased")
 
     def apply(self, text: str) -> List[str]:
         doc = nlp(text)
-        words = text.split()
-        if len(words) != len(doc):
-            words = [t.text for t in doc]
+        words = [t.text for t in doc]
         variants = set()
 
-        # Group token indices by POS type
-        pos_indices = {"ADJ": [], "VERB": [], "NOUN": [], "ADV": []}
-        for token in doc:
-            if token.pos_ in pos_indices:
-                pos_indices[token.pos_].append(token.i)
+        pos_map = {
+            "ADJ": wn.ADJ,
+            "VERB": wn.VERB,
+            "NOUN": wn.NOUN,
+            "ADV": wn.ADV,
+            "ADP": wn.ADV,
+            "INTJ": wn.ADV
+        }
+        target_pos = set(pos_map.keys())
+        pos_counts = {pos: 0 for pos in target_pos}
+        replacement_log = []
 
-        # Map to hold synonyms per token index
-        synonym_map = {}
+        for i, token in enumerate(doc):
+            if token.pos_ not in target_pos:
+                continue
+            pos_counts[token.pos_] += 1
 
-        for pos, indices in pos_indices.items():
-            wn_pos = {"ADJ": wn.ADJ, "VERB": wn.VERB, "NOUN": wn.NOUN, "ADV": wn.ADV}[pos]
-            for i in indices:
-                token = doc[i]
-                synonyms = {
-                    lemma.name().replace("_", " ")
-                    for syn in wn.synsets(token.text, pos=wn_pos)
-                    for lemma in syn.lemmas()
-                    if lemma.name().lower() != token.text.lower()
-                }
-                if synonyms:
-                    synonym_map[i] = list(synonyms)
+            masked_words = words.copy()
+            masked_words[i] = "[MASK]"
+            masked_text = " ".join(masked_words)
+            inputs = self.tokenizer(masked_text, return_tensors="pt")
+            with torch.no_grad():
+                logits = self.model(**inputs).logits
+            mask_idx = torch.where(inputs["input_ids"] == self.tokenizer.mask_token_id)[1]
+            topk = torch.topk(logits[0, mask_idx], k=10, dim=-1).indices[0].tolist()
 
-        # Individual replacements
-        for i, syns in synonym_map.items():
-            for synonym in syns:
-                mutated = words.copy()
-                mutated[i] = synonym
-                variant = " ".join(mutated)
-                if variant.lower().strip() != text.lower().strip():
-                    variants.add(variant)
-
-        # Multi-word combinations
-        indices = list(synonym_map.keys())
-        for r in range(2, len(indices) + 1):
-            for combo in combinations(indices, r):
-                synonym_lists = [synonym_map[i] for i in combo]
-                for replacements in product(*synonym_lists):
+            for token_id in topk:
+                new_word = self.tokenizer.decode([token_id]).strip()
+                self.logger.debug(f"{self.name}: Attempting replacement for '{token.text}' (POS: {token.pos_}) with '{new_word}'")
+                if new_word.lower() != token.text.lower():
                     mutated = words.copy()
-                    for idx, repl in zip(combo, replacements):
-                        mutated[idx] = repl
+                    mutated[i] = new_word
                     variant = " ".join(mutated)
                     if variant.lower().strip() != text.lower().strip():
                         variants.add(variant)
+                        replacement_log.append((token.text, new_word, token.pos_))
 
-        return list(variants) if variants else [text]
+        result_variants = list(variants) if variants else [text]
+        for pos, count in pos_counts.items():
+            self.logger.debug(f"{self.name}: Found {count} tokens with POS {pos}")
+        for original, new, pos in replacement_log:
+            self.logger.debug(f"{self.name}: Replaced '{original}' with '{new}' (POS: {pos})")
+        self.logger.debug(f"{self.name}: Generated {len(result_variants)} variants using BERT synonym substitution for POS-aware replacement from: '{text[:60]}...'")
+        return result_variants
 
-## @class BertMLMOperator
-# @brief Uses BERT Masked Language Model to replace one word with a predicted alternative.
 class BertMLMOperator(VariationOperator):
-    def __init__(self):
+    def __init__(self, log_file=None):
         super().__init__("BertMLM", "mutation", "Uses BERT MLM to replace one word.")
-        logger.debug(f"Initialized operator: {self.name}")
+        self.logger = get_logger(self.name, log_file)
+        self.logger.debug(f"Initialized operator: {self.name}")
         self.tokenizer = BertTokenizer.from_pretrained("bert-base-uncased")
         self.model = BertForMaskedLM.from_pretrained("bert-base-uncased")
 
@@ -260,16 +153,18 @@ class BertMLMOperator(VariationOperator):
                 if result.lower() != text.strip().lower():
                     variants.add(result)
 
-        return list(variants) if variants else [text]
+        result_variants = list(variants) if variants else [text]
+        self.logger.debug(f"{self.name}: Generated {len(result_variants)} variants via BERT MLM from: '{text[:60]}...'")
+        return result_variants
 
-## @class LLMBasedParaphrasingOperator
-# @brief Uses your LLM to paraphrase the input multiple times with north star guidance.
 class LLMBasedParaphrasingOperator(VariationOperator):
-    def __init__(self, generator, north_star_metric):
+    def __init__(self, generator, north_star_metric, log_file=None):
         super().__init__("LLMBasedParaphrasing", "mutation", "Uses LLM to paraphrase input multiple times with optimization intent.")
         self.generator = generator
         self.north_star_metric = north_star_metric
-        logger.debug(f"Initialized operator: {self.name}")
+        self.log_file = log_file
+        self.logger = get_logger(self.name, self.log_file)
+        self.logger.debug(f"Initialized operator: {self.name} with north_star_metric: {self.north_star_metric}")
 
     def apply(self, text: str) -> List[str]:
         variants = set()
@@ -278,30 +173,28 @@ class LLMBasedParaphrasingOperator(VariationOperator):
         for _ in range(4):
             full_prompt = f"{instruction}\n{text}"
             try:
-                result = self.generator.generate_from_prompt(full_prompt)
-                paraphrase = result.get("generated_response", "").strip()
+                paraphrase = self.generator.generate_response(full_prompt).strip()
                 if paraphrase and paraphrase.lower() != text.lower():
                     variants.add(paraphrase)
-                    logger.debug(f"{self.name}: Generated variant '{paraphrase}'")
+                    self.logger.debug(f"{self.name}: Generated variant '{paraphrase}'")
             except Exception as e:
-                logger.error(f"{self.name}: Failed to generate variant: {e}")
+                self.logger.error(f"{self.name}: Failed to generate variant: {e}")
 
-        return list(variants) if variants else [text]
+        result_variants = list(variants) if variants else [text]
+        self.logger.debug(f"{self.name}: Total {len(result_variants)} paraphrases generated via LLM for input: '{text[:60]}...'")
+        return result_variants
 
-## @class BackTranslationOperator
-# @brief Performs back-translation via English-Hindi-English for paraphrasing.
 class BackTranslationOperator(VariationOperator):
-    def __init__(self):
+    def __init__(self, log_file=None):
         super().__init__("BackTranslation", "mutation", "Performs EN→HI→EN back-translation.")
-        logger.debug(f"Initialized operator: {self.name}")
-        # Ensure translation models are pre‑downloaded into the HF cache (strategy #1)
+        self.logger = get_logger(self.name, log_file)
+        self.logger.debug(f"Initialized operator: {self.name}")
         for model_id in ("Helsinki-NLP/opus-mt-en-hi", "Helsinki-NLP/opus-mt-hi-en"):
             try:
                 snapshot_download(model_id, local_files_only=True)
             except Exception:
-                logger.info(f"Model {model_id} not found in cache. Downloading...")
+                self.logger.info(f"Model {model_id} not found in cache. Downloading...")
                 snapshot_download(model_id, local_files_only=False, resume_download=True)
-        # Load translation pipelines from local cache
         en_hi_model = AutoModelForSeq2SeqLM.from_pretrained(
             "Helsinki-NLP/opus-mt-en-hi", local_files_only=True
         )
@@ -325,23 +218,24 @@ class BackTranslationOperator(VariationOperator):
     def apply(self, text: str) -> List[str]:
         variants = set()
         attempts = 0
+        original_normalized = text.strip().lower()
         while len(variants) < 4 and attempts < 10:
             try:
                 hindi = self.en_hi(text, max_length=1024)[0]['translation_text']
                 english = self.hi_en(hindi, max_length=1024, do_sample=True, top_k=50)[0]['translation_text']
-                cleaned = english.strip().lower()
-                if cleaned and cleaned != text.strip().lower() and cleaned not in variants:
-                    logger.debug(f"{self.name}: Back-translated to '{english}'")
-                    variants.add(english.strip())
+                cleaned = english.strip()
+                normalized = cleaned.lower()
+                if normalized and normalized != original_normalized and normalized not in variants:
+                    self.logger.debug(f"{self.name}: Back-translated to '{cleaned}'")
+                    variants.add(normalized)
             except Exception as e:
-                logger.error(f"[BackTranslation error]: {e}")
+                self.logger.error(f"[BackTranslation error]: {e}")
             attempts += 1
-        return list(variants) if variants else [text]
+        result_variants = list({v.strip() for v in variants}) if variants else [text]
+        self.logger.debug(f"{self.name}: Generated {len(result_variants)} unique back-translations for: '{text[:60]}...'")
+        return result_variants
 
 
-
-
-# NOTE: Specify the north_star_metric as needed, e.g., "toxicity_score"
 SINGLE_PARENT_OPERATORS = [
     POSAwareSynonymReplacement(),
     BertMLMOperator(),
@@ -349,7 +243,6 @@ SINGLE_PARENT_OPERATORS = [
 ]
 
 
-# Returns the list of single-parent operators, including LLMBasedParaphrasingOperator with the provided north_star_metric.
 def get_single_parent_operators(north_star_metric):
     return [
         POSAwareSynonymReplacement(),
@@ -359,22 +252,20 @@ def get_single_parent_operators(north_star_metric):
     ]
 
 
-## @class SentenceLevelCrossover
-# @brief Combines sentences from two parent texts to create a new variant.
 class SentenceLevelCrossover(VariationOperator):
-    def __init__(self):
+    def __init__(self, log_file=None):
         super().__init__("SentenceLevelCrossover", "crossover", "Combines sentences from two parent texts.")
-        logger.debug(f"Initialized operator: {self.name}")
+        self.logger = get_logger(self.name, log_file)
+        self.logger.debug(f"Initialized operator: {self.name}")
 
     def apply(self, parent_texts: List[str]) -> str:
         if not isinstance(parent_texts, list) or len(parent_texts) < 2:
-            logger.warning(f"{self.name}: Insufficient parents for crossover.")
+            self.logger.warning(f"{self.name}: Insufficient parents for crossover.")
             return parent_texts[0] if parent_texts else ""
 
         parent1_sentences = parent_texts[0].split(". ")
         parent2_sentences = parent_texts[1].split(". ")
 
-        # Combine half from each (fallback if fewer sentences exist)
         num_sentences_p1 = max(1, len(parent1_sentences) // 2)
         num_sentences_p2 = max(1, len(parent2_sentences) // 2)
 
@@ -384,17 +275,13 @@ class SentenceLevelCrossover(VariationOperator):
         if not result_text.endswith("."):
             result_text += "."
 
-        logger.debug(f"{self.name}: Created crossover result with {len(crossover_result)} sentences.")
+        self.logger.debug(f"{self.name}: Created crossover result with {len(crossover_result)} sentences.")
         return result_text
 
 MULTI_PARENT_OPERATORS = [
     SentenceLevelCrossover()
 ]
 
-## @brief Returns the list of variation operators based on parent count.
-# @param num_parents Number of parent genomes.
-# @param north_star_metric (optional) Metric name for LLMBasedParaphrasingOperator.
-# @return List of operator instances.
 def get_applicable_operators(num_parents: int, north_star_metric):
     if num_parents == 1:
         return get_single_parent_operators(north_star_metric)

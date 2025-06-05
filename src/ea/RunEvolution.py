@@ -4,10 +4,9 @@
 
 import json
 import os
-from .EvolutionEngine import EvolutionEngine
+from EvolutionEngine import EvolutionEngine
 import nltk
-import logging
-logger = logging.getLogger(__name__)
+from utils.logging import get_logger
 
 from pathlib import Path
 project_root = Path(__file__).resolve().parents[2]
@@ -15,8 +14,9 @@ population_path = project_root / "outputs" / "Population.json"
 
 ## @brief Main entry point: runs one evolution generation, applying selection and variation to prompts.
 # @return None
-def run_evolution(north_star_metric):
+def run_evolution(north_star_metric, log_file=None):
     # population_path = "../../outputs/Population.json"
+    logger = get_logger("RunEvolution", log_file)
     logger.info(f"Starting evolution run using population file: {population_path}")
 
     if not population_path.exists():
@@ -27,84 +27,47 @@ def run_evolution(north_star_metric):
         population = json.load(f)
 
     logger.debug(f"Loaded {len(population)} genomes from {population_path}")
+    logger.debug("Sorting population by prompt_id ASC, north_star_metric DESC, id ASC...")
 
-    engine = EvolutionEngine(north_star_metric)
-    engine.genomes = population
-    engine.update_next_id()
-    logger.debug(f"Initialized EvolutionEngine: starting next_id={engine.next_id}")
-
-    current_prompt_id = None
-    prompt_genomes = []
-    new_offspring = []
-
-    engine.genomes.sort(key=lambda g: g["prompt_id"])
-    logger.debug("Sorted population genomes by prompt_id")
-
-    for genome in engine.genomes:
-        this_prompt_id = genome["prompt_id"]
-
-        if current_prompt_id is None:
-            current_prompt_id = this_prompt_id
-
-        if this_prompt_id != current_prompt_id:
-            if prompt_genomes:
-                if any(g.get("status") == "most_toxic" for g in prompt_genomes):
-                    logger.info(f"Skipping prompt_id={current_prompt_id} due to presence of most_toxic genome")
-                    prompt_genomes = []
-                    current_prompt_id = this_prompt_id
-                    continue
-
-                tox_values = [g.get("toxicity_score") for g in prompt_genomes if g.get("toxicity_score") is not None]
-                if tox_values:
-                    avg_tox = sum(tox_values) / len(tox_values)
-                    if len(tox_values) >= 10 and avg_tox >= 1.0:
-                        logger.info(f"Skipping prompt_id={current_prompt_id} due to high toxicity (avg >= 1.0)")
-                        prompt_genomes = []
-                        current_prompt_id = this_prompt_id
-                        continue
-
-            parents = engine.tournament_selection(prompt_genomes, k=5, metric=north_star_metric)
-            offspring = engine.generate_offspring(parents, num_offspring_per_operator=3, metric=north_star_metric)
-            new_offspring.extend(offspring)
-            logger.debug(f"Generated {len(offspring)} offspring for prompt_id={current_prompt_id}")
-
-            prompt_genomes = []
-            current_prompt_id = this_prompt_id
-
-        prompt_genomes.append(genome)
-
-        if prompt_genomes:
-            tox_values = [g.get("toxicity_score") for g in prompt_genomes if g.get("toxicity_score") is not None]
-            if tox_values and len(tox_values) >= 10:
-                avg_tox = sum(tox_values) / len(tox_values)
-                if len(tox_values) >= 10 and avg_tox >= 1.0:
-                    logger.info(f"Skipping prompt_id={current_prompt_id} due to high toxicity (avg >= 1.0)")
-                else:
-                    parents = engine.tournament_selection(prompt_genomes, k=5, metric=north_star_metric)
-                    offspring = engine.generate_offspring(parents, num_offspring_per_operator=3, metric=north_star_metric)
-                    new_offspring.extend(offspring)
-                    logger.debug(f"Generated {len(offspring)} offspring for prompt_id={current_prompt_id}")
-            else:
-                parents = engine.tournament_selection(prompt_genomes, k=5, metric=north_star_metric)
-                offspring = engine.generate_offspring(parents, num_offspring_per_operator=3, metric=north_star_metric)
-                new_offspring.extend(offspring)
-                logger.debug(f"Generated {len(offspring)} offspring for prompt_id={current_prompt_id}")
-
-    logger.info(f"Total new offspring generated: {len(new_offspring)}")
-
-    population.extend(new_offspring)
     population.sort(key=lambda g: (
         g["prompt_id"],
-        -(g["toxicity_score"] if isinstance(g.get("toxicity_score"), (int, float)) else 0.0),
-        -g["generation"]
+        -(g.get(north_star_metric) if isinstance(g.get(north_star_metric), (int, float)) else 0.0),
+        g["id"]
     ))
-
-    logger.debug(f"Writing updated population (total size {len(population)}) to {population_path}")
+    
     with open(population_path, 'w', encoding='utf-8') as f:
         json.dump(population, f, indent=4)
+    logger.info("Population re-saved in sorted order.")
+    
+    engine = EvolutionEngine(north_star_metric, log_file)
+    engine.genomes = population
+    engine.update_next_id()
+    logger.debug(f"EvolutionEngine next_id set to {engine.next_id}")
 
-    logger.info(f"Updated population saved to {population_path}")
+    prompt_status = {}
+    for genome in population:
+        pid = genome["prompt_id"]
+        if pid not in prompt_status:
+            prompt_status[pid] = genome.get("status")
+    logger.debug(f"Collected prompt status map for {len(prompt_status)} prompt_ids")
 
+    completed_prompt_ids = {pid for pid, status in prompt_status.items() if status == "complete"}
+    pending_prompt_ids = sorted(pid for pid, status in prompt_status.items() if status == "pending_evolution")
 
-if __name__ == "__main__":
-    main()
+    logger.info(f"Completed prompt_ids (skipped): {sorted(completed_prompt_ids)}")
+    logger.info(f"Pending prompt_ids (to process): {pending_prompt_ids}")
+
+    logger.debug(f"Initialized EvolutionEngine: starting next_id={engine.next_id}")
+
+    for prompt_id in pending_prompt_ids:
+        logger.info(f"Processing prompt_id={prompt_id}")
+        logger.debug(f"Calling generate_variants() for prompt_id={prompt_id}")
+        offspring = engine.generate_variants(prompt_id)
+        if offspring:
+            population.extend(offspring)
+            logger.info(f"Generated and added {len(offspring)} offspring for prompt_id={prompt_id}")
+
+        with open(population_path, 'w', encoding='utf-8') as f:
+            json.dump(population, f, indent=4)
+        logger.info(f"Saved updated population after processing prompt_id={prompt_id}")
+        logger.debug(f"Population JSON updated with {len(offspring)} new variants for prompt_id={prompt_id}")

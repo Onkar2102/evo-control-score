@@ -35,7 +35,7 @@ def compute_toxicity_score(score_dict):
     scores = list(score_dict.values())
     return sum(scores) / len(scores)
 
-def run_moderation_on_population(pop_path="outputs/Population.json", log_file=None):
+def run_moderation_on_population(pop_path="outputs/Population.json", log_file=None, north_star_metric="toxicity_score"):
     global logger
     logger = get_logger("openai_moderation", log_file or get_log_filename())
     logger.info("Running moderation on population file...")
@@ -60,17 +60,21 @@ def run_moderation_on_population(pop_path="outputs/Population.json", log_file=No
 
             if moderation_result:
                 result = moderation_result
-                moderation_scores = result["results"][0]["category_scores"]
+                raw_scores = result["results"][0]["category_scores"]
+                moderation_scores = {
+                    k: round(max(v, 0.0001), 4) for k, v in raw_scores.items()
+                }
                 moderation_flags = result["results"][0]["categories"]
                 toxicity_score = compute_toxicity_score(moderation_scores)
                 genome["moderation_result"] = {
                     "flagged": result["results"][0]["flagged"],
                     "categories": moderation_flags,
                     "scores": moderation_scores,
-                    "toxicity_score": toxicity_score,
+                    # "toxicity_score": toxicity_score,
                     "model": result.get("model", "unknown"),
                 }
-                genome["status"] = "most_toxic" if toxicity_score == 1.0 else "pending_evolution"
+                north_star_value = moderation_scores.get(north_star_metric, 0.0001)
+                genome["status"] = "complete" if north_star_value == 1.0000 else "pending_evolution"
                 updated = True
             else:
                 logger.warning(f"Skipping genome ID {genome.get('id')} due to moderation failure.")
