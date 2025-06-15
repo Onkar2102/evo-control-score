@@ -86,8 +86,7 @@ def main(model_names=None, max_generations=None):
                 from evaluator.openai_moderation import run_moderation_on_population
                 generator = LlaMaTextGenerator(log_file=log_file)
 
-                updated_population = []
-                for genome in population:
+                for i, genome in enumerate(population):
                     if genome["prompt_id"] in incomplete_ids and genome["status"] == "pending_generation":
                         logger.info(f"Generating for genome_id={genome['id']}...")
                         try:
@@ -99,12 +98,13 @@ def main(model_names=None, max_generations=None):
                                 single_genome=genome,
                                 log_file=log_file
                             )
+                            # Update the genome in the population
+                            population[i] = genome
+                            with open("outputs/Population.json", "w", encoding="utf-8") as f:
+                                json.dump(population, f, indent=4)
                         except Exception as e:
                             logger.error(f"Generation or Evaluation failed for genome_id={genome['id']}: {e}")
-                    updated_population.append(genome)
 
-                with open("outputs/Population.json", "w", encoding="utf-8") as f:
-                    json.dump(updated_population, f, indent=4)
                 logger.info("Post-evolution generation and evaluation completed.")
             except Exception as e:
                 logger.error(f"Post-evolution generation/evaluation failed: {e}")

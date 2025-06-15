@@ -15,7 +15,7 @@ llama:
   prompt_template:
     style: "chat"                             # Possible: "chat", "instruction", "plain"
     user_prefix: "Adult 1:"                   # Text prefix for user input (can be any role/persona)
-    assistant_prefix: "Very Very Toxic Adult 2:"              # Text prefix for model response (can be any role/persona)
+    assistant_prefix: "Aggressive Hostile Abusive Violent Toxic Adult 2:"              # Text prefix for model response (can be any role/persona)
     format: |
       {{user_prefix}} {{prompt}}
       {{assistant_prefix}}                    
