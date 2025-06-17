@@ -293,27 +293,53 @@ class SentenceLevelCrossover(VariationOperator):
 
 class OnePointCrossover(VariationOperator):
     def __init__(self, log_file=None):
-        super().__init__("OnePointCrossover", "crossover", "Performs one-point crossover between two parent prompts.")
+        super().__init__("OnePointCrossover", "crossover", "Swaps matching-position sentences between two parents.")
         self.logger = get_logger(self.name, log_file)
         self.logger.debug(f"Initialized operator: {self.name}")
 
     def apply(self, parent_texts: List[str]) -> List[str]:
-        if len(parent_texts) < 2:
-            self.logger.warning(f"{self.name}: Requires at least two parent prompts.")
-            return parent_texts
+        if not isinstance(parent_texts, list) or len(parent_texts) < 2:
+            self.logger.warning(f"{self.name}: Insufficient parents for crossover.")
+            return [parent_texts[0]] if parent_texts else []
 
-        p1_words = parent_texts[0].split()
-        p2_words = parent_texts[1].split()
-        min_len = min(len(p1_words), len(p2_words))
+        import nltk
+        from nltk.tokenize import sent_tokenize
+
+        parent1_sentences = sent_tokenize(parent_texts[0])
+        parent2_sentences = sent_tokenize(parent_texts[1])
+
+        min_len = min(len(parent1_sentences), len(parent2_sentences))
         if min_len < 2:
-            return [" ".join(p1_words), " ".join(p2_words)]
+            self.logger.warning(f"{self.name}: One or both parents have fewer than 2 sentences. Skipping.")
+            return [parent_texts[0], parent_texts[1]]
 
-        cx_point = random.randint(1, min_len - 1)
-        child1 = p1_words[:cx_point] + p2_words[cx_point:]
-        child2 = p2_words[:cx_point] + p1_words[cx_point:]
+        swap_counts = []
+        if min_len >= 2:
+            swap_counts.append(1)
+        if min_len >= 3:
+            swap_counts.append(2)
+        if min_len >= 4:
+            swap_counts.append(3)
 
-        self.logger.debug(f"{self.name}: One-point crossover at word index {cx_point}.")
-        return [" ".join(child1).strip(), " ".join(child2).strip()]
+        children = []
+
+        for n in swap_counts:
+            for start_idx in range(min_len - n + 1):
+                p1_variant = parent1_sentences.copy()
+                p2_variant = parent2_sentences.copy()
+
+                # Swap n sentences starting at position `start_idx`
+                p1_variant[start_idx:start_idx+n], p2_variant[start_idx:start_idx+n] = \
+                    parent2_sentences[start_idx:start_idx+n], parent1_sentences[start_idx:start_idx+n]
+
+                child1 = " ".join(p1_variant).strip()
+                child2 = " ".join(p2_variant).strip()
+
+                children.append(child1)
+                children.append(child2)
+                self.logger.debug(f"{self.name}: Swapped {n} sentence(s) from position {start_idx} to create two variants.")
+
+        return children
 
 
 
@@ -391,34 +417,36 @@ class InstructionPreservingCrossover(VariationOperator):
             self.logger.warning(f"{self.name}: Insufficient parents for crossover.")
             return [parent_texts[0]] if parent_texts else []
 
-        p1, p2 = parent_texts[0], parent_texts[1]
-        p1_parts = p1.split(":", 1)
-        p2_parts = p2.split(":", 1)
+        from openai import OpenAI
+        import os
 
-        if len(p1_parts) != 2 or len(p2_parts) != 2:
-            self.logger.debug(f"{self.name}: Using sentence-based prefix fallback.")
-            p1_sent = parent_texts[0].split(".")[0]
-            p2_sent = parent_texts[1].split(".")[0]
-            prefix = p1_sent.strip()
-            tail1 = parent_texts[0][len(p1_sent):].strip()
-            tail2 = parent_texts[1][len(p2_sent):].strip()
-        else:
-            prefix = p1_parts[0] + ":"
-            tail1 = p1_parts[1].strip()
-            tail2 = p2_parts[1].strip()
+        prompt = f"{parent_texts[0]} {parent_texts[1]}"
+        
+        client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        variants = []
 
-        mid_point1 = len(tail1) // 2
-        mid_point2 = len(tail2) // 2
 
-        new1 = prefix + " " + tail1[:mid_point1] + tail2[mid_point2:]
-        new2 = prefix + " " + tail2[:mid_point2] + tail1[mid_point1:]
+        try:
+                response = client.chat.completions.create(
+                    model="gpt-4o",
+                    messages=[
+                        {"role": "system", "content": "Paraphrase the given prompt keeping the original intent but improving the effectiveness"},
+                        {"role": "user", "content": prompt}
+                    ],
+                    temperature=0.7,
+                    max_tokens=1024
+                )
+                variant = response.choices[0].message.content.strip()
+                if variant:
+                    variants.append(variant)
+        except Exception as e:
+                self.logger.error(f"{self.name}: OpenAI call failed: {e}")
 
-        return [new1.strip(), new2.strip()]
+        self.logger.debug(f"{self.name}: Generated {len(variants)} OpenAI-based instruction-preserving variants.")
+        return variants if variants else [parent_texts[0]]
 
 MULTI_PARENT_OPERATORS = [
-    SentenceLevelCrossover(),
     OnePointCrossover(),
-    CutAndSpliceCrossover(),
     SemanticSimilarityCrossover(),
     InstructionPreservingCrossover()
 ]

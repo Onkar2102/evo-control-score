@@ -87,8 +87,6 @@ def main(model_names=None, max_generations=None):
                 prompt_status_map = {g["prompt_id"]: g["status"] for g in population if g["generation"] == 0}
                 incomplete_ids = {pid for pid, status in prompt_status_map.items() if status != "complete"}
 
-                from generator.LLaMaTextGenerator import LlaMaTextGenerator
-                from evaluator.openai_moderation import run_moderation_on_population
                 generator = LlaMaTextGenerator(log_file=log_file)
 
                 for i, genome in enumerate(population):
@@ -96,7 +94,7 @@ def main(model_names=None, max_generations=None):
                         logger.info(f"Generating for genome_id={genome['id']}...")
                         try:
                             generator.generate_for_genome(genome)
-                            genome["status"] = "pending_evaluation"
+                            # genome["status"] = "pending_evaluation"
                             logger.info(f"Evaluating for genome_id={genome['id']}...")
                             run_moderation_on_population(
                                 pop_path="outputs/Population.json",

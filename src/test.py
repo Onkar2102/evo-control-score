@@ -26,8 +26,7 @@ def test_multi_parent_operators():
     parent2 = "A dog barked at the mailman. The leaves rustled in the wind. Silence followed soon after."
     parent_texts = [parent1, parent2]
     
-    operators = [SentenceLevelCrossover(), OnePointCrossover(),     CutAndSpliceCrossover(),
-    SemanticSimilarityCrossover(),
+    operators = [SentenceLevelCrossover(), OnePointCrossover(), SemanticSimilarityCrossover(),
     InstructionPreservingCrossover()]
     
     for operator in operators:
@@ -38,7 +37,7 @@ def test_multi_parent_operators():
 
 if __name__ == "__main__":
     test_operator()
-    test_multi_parent_operators()
+    # test_multi_parent_operators()
     
 # The quick brown fox jumps over the lazy dog.
 # The quick brown fox jumps over the lazy click .

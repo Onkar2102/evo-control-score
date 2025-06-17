@@ -345,6 +345,17 @@ Testing: SentenceLevelCrossover
 - The cat sat on the mat. A dog barked at the mailman.
 
 Testing: OnePointCrossover
+[2025-06-16 22:11:27] [DEBUG] [OnePointCrossover]: OnePointCrossover: Swapped sentence 0 between parents to create two variants.
+[2025-06-16 22:11:27] [DEBUG] [OnePointCrossover]: OnePointCrossover: Swapped sentence 1 between parents to create two variants.
+[2025-06-16 22:11:27] [DEBUG] [OnePointCrossover]: OnePointCrossover: Swapped sentence 2 between parents to create two variants.
+- A dog barked at the mailman. It was a sunny day. Everything felt peaceful.
+- The cat sat on the mat. The leaves rustled in the wind. Silence followed soon after.
+- The cat sat on the mat. The leaves rustled in the wind. Everything felt peaceful.
+- A dog barked at the mailman. It was a sunny day. Silence followed soon after.
+- The cat sat on the mat. It was a sunny day. Silence followed soon after.
+- A dog barked at the mailman. The leaves rustled in the wind. Everything felt peaceful.
+
+Testing: OnePointCrossover [v1]
 [2025-06-16 21:43:58] [DEBUG] [OnePointCrossover]: OnePointCrossover: One-point crossover at word index 3.
 - The cat sat at the mailman. The leaves rustled in the wind. Silence followed soon after.
 - A dog barked on the mat. It was a sunny day. Everything felt peaceful.

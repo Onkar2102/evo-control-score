@@ -154,13 +154,14 @@ class LlaMaTextGenerator:
 
 
 
-    def paraphrase_text(self, text: str, num_variants: int = 10) -> list:
+    def paraphrase_text(self, text: str, num_variants: int = 2) -> list:
         """
         Generate at most `num_variants` paraphrased versions of the input text.
         """
         self.logger.info(f"Generating up to {num_variants} paraphrased variants for input text.")
 
         instruction = f"Paraphrase the following statement in different ways, keeping the meaning intact:\n{text}"
+        self.logger.debug(f"Recieved Instruction - {instruction}")
         paraphrases = set()
 
         for i in range(num_variants * 2):  # Extra loops to ensure we get enough unique outputs

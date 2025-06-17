@@ -345,3 +345,45 @@
 [2025-06-16 21:43:47] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Generated variant 'The swift brown fox leaps over the sluggish dog.'
 [2025-06-16 21:43:48] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Generated variant 'The swift brown fox leaps over the sleepy dog.'
 [2025-06-16 21:43:48] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Total 3 paraphrases generated via OpenAI for input: 'The quick brown fox jumps over the lazy dog....'
+[2025-06-16 22:11:10] [DEBUG] [LLMBasedParaphrasing]: Logger initialized for LLMBasedParaphrasing
+[2025-06-16 22:11:10] [DEBUG] [LLMBasedParaphrasing]: Initialized operator: LLMBasedParaphrasing with north_star_metric: <generator.LLaMaTextGenerator.LlaMaTextGenerator object at 0x15fbeaa80>
+[2025-06-16 22:11:14] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Generated variant 'The swift, brown fox leaps over the idle dog.'
+[2025-06-16 22:11:15] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Generated variant 'The swift auburn fox leaps over the idle canine.'
+[2025-06-16 22:11:16] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Generated variant 'The swift amber fox leaps over the sluggish canine.'
+[2025-06-16 22:11:17] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Generated variant 'The swift brown fox leaps over the sluggish dog.'
+[2025-06-16 22:11:17] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Total 4 paraphrases generated via OpenAI for input: 'The quick brown fox jumps over the lazy dog....'
+[2025-06-17 12:58:52] [DEBUG] [LLMBasedParaphrasing]: Logger initialized for LLMBasedParaphrasing
+[2025-06-17 12:58:52] [DEBUG] [LLMBasedParaphrasing]: Initialized operator: LLMBasedParaphrasing with north_star_metric: <generator.LLaMaTextGenerator.LlaMaTextGenerator object at 0x158ae69f0>
+[2025-06-17 12:58:55] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Generated variant 'The swift brown fox leaps over the sluggish dog.'
+[2025-06-17 12:58:56] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Generated variant 'The swift brown fox leaps over the sluggish dog.'
+[2025-06-17 12:58:57] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Generated variant 'The swift brown fox leaps over the sluggish dog.'
+[2025-06-17 12:58:57] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Generated variant 'The agile fox swiftly leaps over the sluggish dog.'
+[2025-06-17 12:58:57] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Total 2 paraphrases generated via OpenAI for input: 'The quick brown fox jumps over the lazy dog....'
+[2025-06-17 13:02:30] [DEBUG] [LLMBasedParaphrasing]: Logger initialized for LLMBasedParaphrasing
+[2025-06-17 13:02:30] [DEBUG] [LLMBasedParaphrasing]: Initialized operator: LLMBasedParaphrasing with north_star_metric: <generator.LLaMaTextGenerator.LlaMaTextGenerator object at 0x14e3ba900>
+[2025-06-17 13:02:32] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Generated variant 'The swift, brown fox leaps over the sluggish dog.'
+[2025-06-17 13:02:33] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Generated variant 'The swift brown fox leaps over the sluggish dog.'
+[2025-06-17 13:02:34] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Generated variant 'A swift, brown fox leaps over a sluggish dog.'
+[2025-06-17 13:02:35] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Generated variant 'A swift, dark-colored fox leaps over a sluggish dog.'
+[2025-06-17 13:02:35] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Total 4 paraphrases generated via OpenAI for input: 'The quick brown fox jumps over the lazy dog....'
+[2025-06-17 15:16:07] [DEBUG] [LLMBasedParaphrasing]: Logger initialized for LLMBasedParaphrasing
+[2025-06-17 15:16:07] [DEBUG] [LLMBasedParaphrasing]: Initialized operator: LLMBasedParaphrasing with north_star_metric: <generator.LLaMaTextGenerator.LlaMaTextGenerator object at 0x1364666c0>
+[2025-06-17 15:16:10] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Generated variant 'The swift, dark-hued fox leaps over the sluggish canine.'
+[2025-06-17 15:16:11] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Generated variant 'The swift brown fox leaps over the sluggish dog.'
+[2025-06-17 15:16:12] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Generated variant 'The swift auburn fox leaps over the sluggish dog.'
+[2025-06-17 15:16:12] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Generated variant 'The swift brown fox leaps over the sluggish dog.'
+[2025-06-17 15:16:12] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Total 3 paraphrases generated via OpenAI for input: 'The quick brown fox jumps over the lazy dog....'
+[2025-06-17 15:52:25] [DEBUG] [LLMBasedParaphrasing]: Logger initialized for LLMBasedParaphrasing
+[2025-06-17 15:52:25] [DEBUG] [LLMBasedParaphrasing]: Initialized operator: LLMBasedParaphrasing with north_star_metric: <generator.LLaMaTextGenerator.LlaMaTextGenerator object at 0x146de6840>
+[2025-06-17 15:52:27] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Generated variant 'The speedy brown fox leaps over the sluggish dog.'
+[2025-06-17 15:52:28] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Generated variant 'The swift brown fox leaps over the sluggish dog.'
+[2025-06-17 15:52:28] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Generated variant 'The swift brown fox leaps over the sluggish dog.'
+[2025-06-17 15:52:29] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Generated variant 'The swift brown fox leaps over the lethargic dog.'
+[2025-06-17 15:52:29] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Total 3 paraphrases generated via OpenAI for input: 'The quick brown fox jumps over the lazy dog....'
+[2025-06-17 15:58:08] [DEBUG] [LLMBasedParaphrasing]: Logger initialized for LLMBasedParaphrasing
+[2025-06-17 15:58:08] [DEBUG] [LLMBasedParaphrasing]: Initialized operator: LLMBasedParaphrasing with north_star_metric: <generator.LLaMaTextGenerator.LlaMaTextGenerator object at 0x130f326f0>
+[2025-06-17 15:58:11] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Generated variant 'The swift brown fox leaps over the lethargic dog.'
+[2025-06-17 15:58:12] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Generated variant 'The swift tan fox vaults over the sluggish canine.'
+[2025-06-17 15:58:13] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Generated variant 'A swift brown fox leaps over a sluggish dog.'
+[2025-06-17 15:58:14] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Generated variant 'The swift fox with a brown coat leaps over the sluggish canine.'
+[2025-06-17 15:58:14] [DEBUG] [LLMBasedParaphrasing]: LLMBasedParaphrasing: Total 4 paraphrases generated via OpenAI for input: 'The quick brown fox jumps over the lazy dog....'
