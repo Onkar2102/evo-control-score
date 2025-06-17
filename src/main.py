@@ -18,11 +18,13 @@ def main(model_names=None, max_generations=None):
 
     logger.info("Initializing pipeline...")
 
-    while True:
+    import os
+    from utils.initialize_population import load_and_initialize_population
+
+    if not os.path.exists("outputs/Population.json"):
         try:
             population_start = time.time()
-            from utils.initialize_population import load_and_initialize_population
-            logger.info("Loading prompts and initializing population...")
+            logger.info("Population file not found. Initializing population from prompt.xlsx...")
             load_and_initialize_population(
                 input_path="data/prompt.xlsx",
                 output_path="outputs/Population.json",
@@ -33,7 +35,10 @@ def main(model_names=None, max_generations=None):
         except Exception as e:
             logger.error(f"Failed to initialize population: {e}")
             return
-        
+    else:
+        logger.info("Existing population found. Skipping initialization.")
+
+    while True:
         try:
             generation_start = time.time()
             from generator.LLaMaTextGenerator import LlaMaTextGenerator

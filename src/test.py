@@ -6,7 +6,7 @@ from generator.LLaMaTextGenerator import LlaMaTextGenerator
 generator = LlaMaTextGenerator()
 def test_operator():
     north_star_metric = "violence"  # or any appropriate default for testing
-    operators = [LLMBasedParaphrasingOperator(generator, north_star_metric), BackTranslationOperator()]
+    operators = [LLMBasedParaphrasingOperator(generator, north_star_metric), BackTranslationOperator(), POSAwareSynonymReplacement(), BertMLMOperator()]
     text = "The quick brown fox jumps over the lazy dog."
     for operator in operators:
         variants = operator.apply(text)
