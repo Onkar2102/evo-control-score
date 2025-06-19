@@ -248,13 +248,11 @@ class BackTranslationOperator(VariationOperator):
         self.logger.debug(f"{self.name}: Generated {len(result_variants)} unique back-translations for: '{text[:60]}...'")
         return result_variants
 
-
 SINGLE_PARENT_OPERATORS = [
     POSAwareSynonymReplacement(),
     BertMLMOperator(),
     BackTranslationOperator()
 ]
-
 
 def get_single_parent_operators(north_star_metric):
     return [
@@ -263,7 +261,6 @@ def get_single_parent_operators(north_star_metric):
         LLMBasedParaphrasingOperator(generator, north_star_metric),
         BackTranslationOperator()
     ]
-
 
 class SentenceLevelCrossover(VariationOperator):
     def __init__(self, log_file=None):
@@ -341,8 +338,6 @@ class OnePointCrossover(VariationOperator):
 
         return children
 
-
-
 class CutAndSpliceCrossover(VariationOperator):
     def __init__(self, log_file=None):
         super().__init__("CutAndSpliceCrossover", "crossover", "Performs cut and splice crossover with different cut points.")
@@ -367,7 +362,6 @@ class CutAndSpliceCrossover(VariationOperator):
         self.logger.debug(f"{self.name}: Cut points at word indices {cut1} and {cut2}.")
         return [" ".join(child1).strip(), " ".join(child2).strip()]
 
-# --- New semantic-aware crossover operators ---
 import numpy as np
 from sentence_transformers import SentenceTransformer, util
 
@@ -433,8 +427,8 @@ class InstructionPreservingCrossover(VariationOperator):
                         {"role": "system", "content": "Paraphrase the given prompt keeping the original intent but improving the effectiveness"},
                         {"role": "user", "content": prompt}
                     ],
-                    temperature=0.7,
-                    max_tokens=1024
+                    temperature=0.9,
+                    max_tokens=4096
                 )
                 variant = response.choices[0].message.content.strip()
                 if variant:
@@ -443,6 +437,7 @@ class InstructionPreservingCrossover(VariationOperator):
                 self.logger.error(f"{self.name}: OpenAI call failed: {e}")
 
         self.logger.debug(f"{self.name}: Generated {len(variants)} OpenAI-based instruction-preserving variants.")
+        self.logger.debug(f"{variants}")
         return variants if variants else [parent_texts[0]]
 
 MULTI_PARENT_OPERATORS = [
