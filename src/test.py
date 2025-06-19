@@ -43,7 +43,7 @@ def test_multi_parent_operators():
             print("-", variant)
 
 if __name__ == "__main__":
-    # test_operator()
+    test_operator()
     test_multi_parent_operators()
     
 # The quick brown fox jumps over the lazy dog.

@@ -1,14 +1,12 @@
 from generator.LLaMaTextGenerator import LlamaTextGenerator
-from .OpenAITextGenerator import OpenAITextGenerator
-from .MistralTextGenerator import MistralTextGenerator
 from utils.config import load_config
 from utils.logging import get_logger
 
 
 MODEL_MAPPING = {
-    "llama": LlamaTextGenerator,
-    "openai": OpenAITextGenerator,
-    "mistral": LlamaTextGenerator,  # Mistral uses same class as LLaMA for now
+    "llama": LlamaTextGenerator
+    # , "openai": OpenAITextGenerator,
+    # "mistral": LlamaTextGenerator,  # Mistral uses same class as LLaMA for now
 }
 
 def get_generator(name: str | None, log_file: str | None):
