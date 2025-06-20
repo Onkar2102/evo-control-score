@@ -92,7 +92,7 @@ Each genome contains:
 ```json
 {
   "id": "unique_identifier",
-  "prompt_id": "original_prompt_reference", 
+  "prompt_id": "original_prompt_reference",
   "prompt": "text_content",
   "generation": "evolution_generation",
   "status": "pending_generation|pending_evaluation|complete",
@@ -183,7 +183,7 @@ echo "OPENAI_PROJECT_ID=your_project_id" >> .env
 Required in `.env` file:
 ```env
 OPENAI_API_KEY=your_openai_api_key
-OPENAI_ORG_ID=your_organization_id  
+OPENAI_ORG_ID=your_organization_id
 OPENAI_PROJECT_ID=your_project_id
 ```
 
@@ -439,7 +439,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 ### Third-Party Dependencies
 
 - **Transformers & PyTorch**: Apache 2.0 / BSD License
-- **OpenAI API**: Subject to OpenAI Terms of Service  
+- **OpenAI API**: Subject to OpenAI Terms of Service
 - **spaCy**: MIT License
 - **Additional packages**: See requirements.txt for complete list
 

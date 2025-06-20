@@ -1,7 +1,8 @@
+import json
 import random
 from typing import List, Dict
 from .TextVariationOperators import get_applicable_operators
-from utils.logging import get_logger
+from utils.custom_logging import get_logger
 from itertools import combinations
 
 class EvolutionEngine:

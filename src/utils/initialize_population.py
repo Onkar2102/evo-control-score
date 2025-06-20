@@ -1,5 +1,5 @@
 import json
-from utils.logging import get_logger
+from utils.custom_logging import get_logger
 from pathlib import Path
 import pandas as pd
 

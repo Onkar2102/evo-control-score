@@ -14,7 +14,7 @@ from huggingface_hub import snapshot_download
 from .VariationOperators import VariationOperator
 from dotenv import load_dotenv
 from itertools import combinations, product
-from utils.logging import get_logger
+from utils.custom_logging import get_logger
 from openai import OpenAI
 import os
 

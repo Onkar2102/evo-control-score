@@ -17,8 +17,6 @@ def test_operator():
         print("\nGenerated Variants:")
         for variant in variants:
             print("-", variant)
-    
-    # o
 
 from ea.TextVariationOperators import SentenceLevelCrossover, OnePointCrossover, CutAndSpliceCrossover, SemanticSimilarityCrossover, InstructionPreservingCrossover
 
@@ -45,30 +43,3 @@ def test_multi_parent_operators():
 if __name__ == "__main__":
     test_operator()
     test_multi_parent_operators()
-    
-# The quick brown fox jumps over the lazy dog.
-# The quick brown fox jumps over the lazy click .
-# The quick brown slyboots jumps over the lazy dog .
-# The immediate brown fox jumps over the lazy dog .
-# The quick brown fox jumps over the slothful dog .
-# The quick brown fox jumps all over the lazy dog .
-# The quick brown fox pass over over the lazy dog .
-# The quick browned fox jumps over the lazy dog .
-
-
-# from generator.LLaMaTextGenerator import LlaMaTextGenerator
-
-# def test_paraphrasing():
-#     text = "The quick brown fox jumps over the lazy dog."
-#     generator = LlaMaTextGenerator(log_file=None)
-    
-#     variants = generator.paraphrase_text(text)
-
-#     print("Original Text:")
-#     print(text)
-#     print("\nParaphrased Variants:")
-#     for variant in variants:
-#         print("-", variant)
-
-# if __name__ == "__main__":
-#     test_paraphrasing()

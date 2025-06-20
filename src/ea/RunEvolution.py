@@ -6,7 +6,7 @@ import json
 import os
 from .EvolutionEngine import EvolutionEngine
 import nltk
-from utils.logging import get_logger
+from utils.custom_logging import get_logger
 
 from pathlib import Path
 project_root = Path(__file__).resolve().parents[2]

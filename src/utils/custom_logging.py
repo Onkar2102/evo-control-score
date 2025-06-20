@@ -6,6 +6,8 @@ import getpass
 import datetime
 import json
 
+# Global variable to store the log file path for the current run
+_CURRENT_LOG_FILE = None
 
 def get_run_id():
     log_index_file = "logs/log_index.json"
@@ -28,15 +30,22 @@ def get_run_id():
 
     return today_run_id
 
-
 def get_log_filename():
+    global _CURRENT_LOG_FILE
+    
+    # If we already have a log file for this run, return it
+    if _CURRENT_LOG_FILE is not None:
+        return _CURRENT_LOG_FILE
+    
+    # Create a new log file only once per run
     timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     run_id = get_run_id()
     user = getpass.getuser()
     machine = platform.node().split('.')[0]
     device_info = f"{user}@{machine}".replace(" ", "_")
-    return f"logs/{timestamp}_run{run_id}_{device_info}.log"
 
+    _CURRENT_LOG_FILE = f"logs/{timestamp}_run{run_id}_{device_info}.log"
+    return _CURRENT_LOG_FILE
 
 def get_logger(name: str = "default_logger", log_file: str = None) -> logging.Logger:
     logger = logging.getLogger(name)

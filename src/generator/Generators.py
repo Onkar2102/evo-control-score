@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from utils.logging import get_logger
+from utils.custom_logging import get_logger
 
 logger = get_logger("Generators")
 
