@@ -5,9 +5,11 @@ import yaml
 import random
 import numpy as np
 from transformers import AutoTokenizer, AutoModelForCausalLM, BitsAndBytesConfig
-from utils.custom_logging import get_logger
-from typing import List, Dict
+from utils.custom_logging import get_logger, PerformanceLogger
+from typing import List, Dict, Any, Optional
 import time
+import asyncio
+from openai import AsyncOpenAI
 
 # torch.manual_seed(42)
 # random.seed(42)
@@ -19,7 +21,7 @@ class LlaMaTextGenerator:
     _MODEL_CACHE = {}
     _DEVICE_CACHE = None
     
-    def __init__(self, model_key="llama", config_path="config/modelConfig.yaml", log_file: str = None):
+    def __init__(self, model_key="llama", config_path="config/modelConfig.yaml", log_file: Optional[str] = None):
         self.log_file = log_file
         self.logger = get_logger("LLaMaTextGenerator", self.log_file)
         self.logger.debug(f"Logger correctly initialized with log_file: {self.log_file}")
@@ -51,6 +53,11 @@ class LlaMaTextGenerator:
         self.max_batch_size = self.model_cfg.get("max_batch_size", 4)
         self.logger.info(f"Model loaded on {self.device} with batch size {self.max_batch_size}")
 
+        # Performance tracking
+        self.generation_count = 0
+        self.total_tokens_generated = 0
+        self.total_generation_time = 0.0
+
     def _get_optimal_device(self):
         """Get the best available device for M3 Mac"""
         if self._DEVICE_CACHE is not None:
@@ -77,7 +84,7 @@ class LlaMaTextGenerator:
             model_name, 
             legacy=False,
             use_fast=True,  # Use fast tokenizer for better performance
-            padding_side="left"  # Better for batch generation
+            padding_side=self.model_cfg.get("padding_side", "left")  # Configurable padding direction
         )
         tokenizer.pad_token = tokenizer.eos_token
         
@@ -189,70 +196,93 @@ class LlaMaTextGenerator:
         """Single prompt generation (backwards compatibility)"""
         return self.generate_response_batch([prompt])[0]
 
-    def process_population(self, pop_path="outputs/Population.json"):
-        """Process population with batch optimization"""
-        start_time = time.time()
+    def process_population(self, pop_path: str = "outputs/Population.json", batch_size: int = None) -> None:
+        """Process entire population for text generation with batch saving for fault tolerance"""
+        # Use config batch size if not provided, fallback to default
+        if batch_size is None:
+            batch_size = self.model_cfg.get("generation_batch_size", 10)
         
-        with open(pop_path, "r") as f:
-            population = json.load(f)
-
-        # Collect pending genomes for batch processing
-        pending_genomes = []
-        pending_indices = []
-        
-        for idx, genome in enumerate(population):
-            if genome.get("status") == "pending_generation":
-                pending_genomes.append(genome)
-                pending_indices.append(idx)
-
-        if not pending_genomes:
-            self.logger.info("No genomes require generation.")
-            return
-
-        self.logger.info(f"Processing {len(pending_genomes)} genomes in batches of {self.max_batch_size}")
-        
-        # Process in batches
-        updated_count = 0
-        for i in range(0, len(pending_genomes), self.max_batch_size):
-            batch_genomes = pending_genomes[i:i + self.max_batch_size]
-            batch_indices = pending_indices[i:i + self.max_batch_size]
-            
-            # Extract prompts for batch processing
-            batch_prompts = [genome.get("prompt", "") for genome in batch_genomes]
-            
-            self.logger.debug(f"Generating batch {i//self.max_batch_size + 1} with {len(batch_prompts)} prompts")
-            
+        with PerformanceLogger(self.logger, "Process Population", pop_path=pop_path, batch_size=batch_size):
             try:
-                # Generate responses in batch
-                batch_responses = self.generate_response_batch(batch_prompts)
+                self.logger.info("Starting population processing for text generation with batch saving")
+                self.logger.info("Using batch size: %d (from config: %s)", batch_size, 
+                               self.model_cfg.get("generation_batch_size", "default"))
                 
-                # Update genomes with responses
-                for j, (genome_idx, response) in enumerate(zip(batch_indices, batch_responses)):
-                    population[genome_idx]["generated_response"] = response
-                    population[genome_idx]["status"] = "pending_evaluation"
-                    population[genome_idx]["model_provider"] = self.model_cfg.get("provider", "")
-                    population[genome_idx]["model_name"] = self.model_cfg.get("name", "")
-                    updated_count += 1
-                    
-                    self.logger.debug(f"Generated for genome ID {population[genome_idx]['id']}")
+                # Load population
+                population = self._load_population(pop_path)
                 
-                # Periodic save to avoid losing progress
-                if (i + self.max_batch_size) % (self.max_batch_size * 4) == 0:
-                    with open(pop_path, "w") as f:
-                        json.dump(population, f, indent=2)
-                    self.logger.debug(f"Intermediate save completed after {i + self.max_batch_size} genomes")
+                # Count genomes that need processing
+                pending_genomes = [g for g in population if g.get('status') == 'pending_generation']
+                self.logger.info("Found %d genomes pending generation out of %d total", 
+                               len(pending_genomes), len(population))
+                
+                if not pending_genomes:
+                    self.logger.info("No genomes pending generation. Skipping processing.")
+                    return
+                
+                # Process genomes in batches
+                total_processed = 0
+                total_errors = 0
+                batch_count = 0
+                
+                for i in range(0, len(population), batch_size):
+                    batch_count += 1
+                    batch_end = min(i + batch_size, len(population))
+                    batch_genomes = population[i:batch_end]
                     
+                    self.logger.info("Processing batch %d: genomes %d-%d", 
+                                   batch_count, i + 1, batch_end)
+                    
+                    # Process each genome in the batch
+                    batch_processed = 0
+                    batch_errors = 0
+                    
+                    for genome in batch_genomes:
+                        if genome.get('status') == 'pending_generation':
+                            genome_id = genome.get('id', 'unknown')
+                            self.logger.debug("Processing genome %s in batch %d", genome_id, batch_count)
+                            
+                            processed_genome = self._process_genome(genome)
+                            
+                            if processed_genome.get('status') == 'pending_evaluation':
+                                batch_processed += 1
+                            elif processed_genome.get('status') == 'error':
+                                batch_errors += 1
+                    
+                    # Save population after each batch
+                    if batch_processed > 0 or batch_errors > 0:
+                        self.logger.info("Saving population after batch %d: %d processed, %d errors", 
+                                       batch_count, batch_processed, batch_errors)
+                        self._save_population(population, pop_path)
+                    
+                    total_processed += batch_processed
+                    total_errors += batch_errors
+                    
+                    # Log batch summary
+                    self.logger.info("Batch %d completed: %d processed, %d errors", 
+                                   batch_count, batch_processed, batch_errors)
+                
+                # Log final summary
+                self.logger.info("Population processing completed:")
+                self.logger.info("  - Total batches: %d", batch_count)
+                self.logger.info("  - Total genomes: %d", len(population))
+                self.logger.info("  - Successfully processed: %d", total_processed)
+                self.logger.info("  - Errors: %d", total_errors)
+                self.logger.info("  - Skipped: %d", len(population) - total_processed - total_errors)
+                
+                # Log performance metrics
+                if self.generation_count > 0:
+                    avg_tokens = self.total_tokens_generated / self.generation_count
+                    avg_time = self.total_generation_time / self.generation_count
+                    self.logger.info("Generation Performance:")
+                    self.logger.info("  - Total generations: %d", self.generation_count)
+                    self.logger.info("  - Total tokens: %d", self.total_tokens_generated)
+                    self.logger.info("  - Average tokens per generation: %.1f", avg_tokens)
+                    self.logger.info("  - Average time per generation: %.3f seconds", avg_time)
+                
             except Exception as e:
-                self.logger.error(f"Batch generation failed for batch starting at {i}: {e}")
-                # Continue with next batch
-                continue
-
-        # Final save
-            with open(pop_path, "w") as f:
-                json.dump(population, f, indent=2)
-        
-        elapsed_time = time.time() - start_time
-        self.logger.info(f"Updated {updated_count} genomes in {elapsed_time:.2f} seconds ({updated_count/elapsed_time:.2f} genomes/sec)")
+                self.logger.error("Population processing failed: %s", e, exc_info=True)
+                raise
 
     def generate_for_genome(self, genome: Dict):
         """Generate a response for a single genome dictionary in-place."""
@@ -304,10 +334,10 @@ class LlaMaTextGenerator:
 
     def paraphrase_text(self, text: str, num_variants: int = 2) -> List[str]:
         """Generate at most `num_variants` paraphrased versions of the input text."""
-        self.logger.info(f"Generating up to {num_variants} paraphrased variants for input text.")
+        self.logger.info("Generating up to %d paraphrased variants for input text", num_variants)
 
         instruction = f"Paraphrase the following statement in different ways, keeping the meaning intact:\n{text}"
-        self.logger.debug(f"Received Instruction - {instruction}")
+        self.logger.debug("Received Instruction - %s", instruction)
         
         # Use batch generation for efficiency
         instructions = [instruction] * (num_variants * 2)  # Generate extra for uniqueness
@@ -318,12 +348,178 @@ class LlaMaTextGenerator:
             for response in generated:
                 if response.lower() != text.lower() and response.strip():
                     paraphrases.add(response.strip())
-            if len(paraphrases) >= num_variants:
-                break
+                    # Stop if we have enough unique paraphrases
+                    if len(paraphrases) >= num_variants:
+                        break
         except Exception as e:
-            self.logger.error(f"Batch paraphrasing failed: {e}")
+            self.logger.error("Batch paraphrasing failed: %s", e, exc_info=True)
             return [text]
 
-        paraphrase_list = list(paraphrases)
-        self.logger.info(f"Generated {len(paraphrase_list)} unique paraphrased variants.")
+        paraphrase_list = list(paraphrases)[:num_variants]  # Limit to requested number
+        self.logger.info("Generated %d unique paraphrased variants", len(paraphrase_list))
         return paraphrase_list if paraphrase_list else [text]
+
+    def _load_population(self, pop_path: str) -> List[Dict[str, Any]]:
+        """Load population from JSON file with error handling and logging"""
+        with PerformanceLogger(self.logger, "Load Population", file_path=pop_path):
+            try:
+                if not os.path.exists(pop_path):
+                    self.logger.error("Population file not found: %s", pop_path)
+                    raise FileNotFoundError(f"Population file not found: {pop_path}")
+                
+                with open(pop_path, 'r', encoding='utf-8') as f:
+                    population = json.load(f)
+                
+                self.logger.info("Successfully loaded population with %d genomes", len(population))
+                self.logger.debug("Population file path: %s", pop_path)
+                
+                return population
+                
+            except json.JSONDecodeError as e:
+                self.logger.error("Failed to parse population JSON: %s", e, exc_info=True)
+                raise
+            except Exception as e:
+                self.logger.error("Unexpected error loading population: %s", e, exc_info=True)
+                raise
+    
+    def _save_population(self, population: List[Dict[str, Any]], pop_path: str) -> None:
+        """Save population to JSON file with error handling and logging"""
+        with PerformanceLogger(self.logger, "Save Population", file_path=pop_path, genome_count=len(population)):
+            try:
+                # Ensure output directory exists
+                os.makedirs(os.path.dirname(pop_path), exist_ok=True)
+                
+                with open(pop_path, 'w', encoding='utf-8') as f:
+                    json.dump(population, f, indent=2, ensure_ascii=False)
+                
+                self.logger.info("Successfully saved population with %d genomes to %s", len(population), pop_path)
+                
+            except Exception as e:
+                self.logger.error("Failed to save population: %s", e, exc_info=True)
+                raise
+    
+    def _generate_text_simulation(self, prompt: str, genome_id: str) -> str:
+        """Simulate text generation with detailed logging"""
+        with PerformanceLogger(self.logger, "Text Generation", genome_id=genome_id, prompt_length=len(prompt)):
+            try:
+                # Simulate generation time
+                generation_time = 0.1 + (len(prompt) * 0.001)  # Simulate realistic timing
+                time.sleep(generation_time)
+                
+                # Simulate different response patterns based on prompt content
+                if "violence" in prompt.lower():
+                    response = f"Simulated response for genome {genome_id}: I cannot and will not provide information about violence or harmful activities."
+                elif "harmful" in prompt.lower():
+                    response = f"Simulated response for genome {genome_id}: I'm designed to help, not harm. Let me assist you with something constructive."
+                else:
+                    response = f"Simulated response for genome {genome_id}: Here's a helpful and safe response to your query."
+                
+                # Update performance metrics
+                self.generation_count += 1
+                self.total_tokens_generated += len(response.split())
+                self.total_generation_time += generation_time
+                
+                self.logger.debug("Generated response for genome %s: %d tokens in %.3f seconds", 
+                                genome_id, len(response.split()), generation_time)
+                
+                return response
+                
+            except Exception as e:
+                self.logger.error("Text generation failed for genome %s: %s", genome_id, e, exc_info=True)
+                return f"Error generating response for genome {genome_id}: {str(e)}"
+    
+    def _process_genome(self, genome: Dict[str, Any]) -> Dict[str, Any]:
+        """Process a single genome with comprehensive logging"""
+        genome_id = genome.get('id', 'unknown')
+        
+        with PerformanceLogger(self.logger, "Process Genome", genome_id=genome_id):
+            try:
+                # Check if genome needs generation
+                if genome.get('status') != 'pending_generation':
+                    self.logger.debug("Skipping genome %s - status: %s", genome_id, genome.get('status'))
+                    return genome
+                
+                self.logger.info("Processing genome %s for text generation", genome_id)
+                
+                # Extract prompt
+                prompt = genome.get('prompt', '')
+                if not prompt:
+                    self.logger.warning("Empty prompt for genome %s", genome_id)
+                    genome['status'] = 'error'
+                    genome['error'] = 'Empty prompt'
+                    return genome
+                
+                self.logger.debug("Generating text for genome %s with prompt length: %d", genome_id, len(prompt))
+                
+                # Check if simulation mode is enabled
+                use_simulation = self.model_cfg.get("use_simulation", False)
+                
+                if use_simulation:
+                    # Use simulation for testing
+                    self.logger.info("Using simulation mode for genome %s", genome_id)
+                    generated_text = self._generate_text_simulation(prompt, genome_id)
+                else:
+                    # Use real model generation
+                    self.logger.info("Using real model generation for genome %s", genome_id)
+                    try:
+                        generated_text = self.generate_response(prompt)
+                        # Update performance metrics for real generation
+                        self.generation_count += 1
+                        self.total_tokens_generated += len(generated_text.split())
+                        # Note: generation time is tracked in generate_response_batch
+                    except Exception as e:
+                        # Enhanced error logging with prompt text
+                        log_failing_prompts = self.model_cfg.get("log_failing_prompts", True)
+                        if log_failing_prompts:
+                            prompt_preview = prompt[:200] + "..." if len(prompt) > 200 else prompt
+                            self.logger.error("Generation failed for genome %s. Prompt preview: %s. Error: %s", 
+                                            genome_id, prompt_preview, str(e), exc_info=True)
+                        else:
+                            self.logger.error("Generation failed for genome %s. Error: %s", 
+                                            genome_id, str(e), exc_info=True)
+                        genome['status'] = 'error'
+                        genome['error'] = f"Generation failed: {str(e)}"
+                        return genome
+                
+                # Update genome
+                genome['generated_text'] = generated_text
+                genome['status'] = 'pending_evaluation'
+                genome['generation_timestamp'] = time.time()
+                genome['model_provider'] = self.model_cfg.get("provider", "")
+                genome['model_name'] = self.model_cfg.get("name", "")
+                
+                self.logger.info("Successfully generated text for genome %s: %d characters", 
+                               genome_id, len(generated_text))
+                
+                return genome
+                
+            except Exception as e:
+                # Enhanced error logging with prompt text
+                log_failing_prompts = self.model_cfg.get("log_failing_prompts", True)
+                if log_failing_prompts and 'prompt' in locals():
+                    prompt_preview = prompt[:200] + "..." if len(prompt) > 200 else prompt
+                    self.logger.error("Failed to process genome %s. Prompt preview: %s. Error: %s", 
+                                    genome_id, prompt_preview, str(e), exc_info=True)
+                else:
+                    self.logger.error("Failed to process genome %s. Error: %s", 
+                                    genome_id, str(e), exc_info=True)
+                genome['status'] = 'error'
+                genome['error'] = str(e)
+                return genome
+    
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get performance statistics for the generator"""
+        stats = {
+            'generation_count': self.generation_count,
+            'total_tokens_generated': self.total_tokens_generated,
+            'total_generation_time': self.total_generation_time,
+            'model_name': self.model_cfg.get("name", "Unknown")
+        }
+        
+        if self.generation_count > 0:
+            stats['average_tokens_per_generation'] = self.total_tokens_generated / self.generation_count
+            stats['average_time_per_generation'] = self.total_generation_time / self.generation_count
+            stats['tokens_per_second'] = self.total_tokens_generated / self.total_generation_time
+        
+        self.logger.debug("Performance stats: %s", stats)
+        return stats

@@ -1,8 +1,8 @@
 import json
 import random
-from typing import List, Dict
-from .TextVariationOperators import get_applicable_operators
+from typing import List, Dict, Any, Optional
 from utils.custom_logging import get_logger
+from ea.TextVariationOperators import get_applicable_operators
 from itertools import combinations
 
 class EvolutionEngine:
@@ -16,9 +16,11 @@ class EvolutionEngine:
 
     def update_next_id(self):
         if self.genomes:
-            self.next_id = max(g["id"] for g in self.genomes) + 1
+            # Convert string IDs to integers for arithmetic, then back to string
+            max_id = max(int(g["id"]) for g in self.genomes)
+            self.next_id = max_id + 1
         else:
-            self.next_id = 0
+            self.next_id = 1  # Start from 1 since we removed "genome_" prefix
         self.logger.debug(f"Updated next_id to {self.next_id}")
     
     def select_parents(self, prompt_id: int):
@@ -83,7 +85,7 @@ class EvolutionEngine:
                         continue
                     existing_prompts.add(norm_vp)
                     child = {
-                        "id": self.next_id,
+                        "id": str(self.next_id),
                         "prompt_id": prompt_id,
                         "prompt": vp,
                         "model_provider": None,
@@ -134,7 +136,7 @@ class EvolutionEngine:
                                 continue
                             existing_prompts.add(norm_vp)
                             child = {
-                                "id": self.next_id,
+                                "id": str(self.next_id),
                                 "prompt_id": prompt_id,
                                 "prompt": vp,
                                 "model_provider": None,

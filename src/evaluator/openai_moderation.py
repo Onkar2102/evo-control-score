@@ -3,13 +3,14 @@ import json
 import asyncio
 import hashlib
 import time
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional, Tuple, Any
 import openai
 from openai import OpenAI as OpenAIClient, AsyncOpenAI
 from dotenv import load_dotenv
-from utils.custom_logging import get_logger, get_log_filename
+from utils.custom_logging import get_logger, get_log_filename, PerformanceLogger
 from concurrent.futures import ThreadPoolExecutor
 import threading
+import aiohttp
 
 # Load environment variables
 load_dotenv()
@@ -137,109 +138,471 @@ async def run_moderation_batch_async(texts: List[str]) -> List[Optional[Dict]]:
     
     return await evaluate_moderation_async(client, texts)
 
-def run_moderation_on_population(pop_path="outputs/Population.json", single_genome=None, log_file=None, north_star_metric="violence"):
-    """Optimized population moderation with batch processing"""
-    global logger
-    logger = get_logger("openai_moderation", log_file or get_log_filename())
-
-    if not os.getenv("OPENAI_API_KEY"):
-        logger.error("OPENAI_API_KEY not set in environment. Please add it to your .env file.")
-        return
-
-    start_time = time.time()
-
-    if single_genome is not None:
-        logger.debug(f"Running moderation on single genome ID {single_genome.get('id')}")
-        generated_response = single_genome.get("generated_response", "")
-        moderation_result = evaluate_moderation(generated_response)
-
-        if moderation_result:
-            _process_moderation_result(single_genome, moderation_result, north_star_metric)
-        else:
-            logger.warning(f"Skipping genome ID {single_genome.get('id')} due to moderation failure.")
-        return
-
-    logger.info("Running batch moderation on population file...")
-
-    try:
-        with open(pop_path, "r") as f:
-            population = json.load(f)
-    except Exception as e:
-        logger.error(f"Failed to read population file: {e}")
-        return
-
-    # Collect genomes that need evaluation
-    pending_genomes = []
-    pending_indices = []
-    pending_texts = []
+def normalize_moderation_scores(scores: Dict[str, float]) -> Dict[str, float]:
+    """
+    Normalize moderation scores to be between 0.0001 and 1.0000 with 4 decimal places.
     
-    for idx, genome in enumerate(population):
-        if genome.get("status") == "pending_evaluation":
-            generated_response = genome.get("generated_response", "")
-            if generated_response:
-                pending_genomes.append(genome)
-                pending_indices.append(idx)
-                pending_texts.append(generated_response)
-
-    if not pending_texts:
-        logger.info("No genomes require evaluation.")
-        return
-
-    logger.info(f"Processing {len(pending_texts)} genomes for moderation evaluation")
+    Args:
+        scores: Raw scores from OpenAI moderation API
+        
+    Returns:
+        Normalized scores between 0.0001 and 1.0000
+    """
+    normalized_scores = {}
     
-    # Run batch moderation asynchronously
-    try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        moderation_results = loop.run_until_complete(run_moderation_batch_async(pending_texts))
-        loop.close()
-    except Exception as e:
-        logger.error(f"Batch moderation failed: {e}")
-        return
+    for category, score in scores.items():
+        # Ensure score is a float
+        score = float(score)
+        
+        # Apply minimum threshold of 0.0001
+        if score < 0.0001:
+            score = 0.0001
+        
+        # Apply maximum threshold of 1.0000
+        if score > 1.0000:
+            score = 1.0000
+        
+        # Round to 4 decimal places
+        normalized_score = round(score, 4)
+        
+        # Ensure minimum of 0.0001 after rounding
+        if normalized_score == 0.0:
+            normalized_score = 0.0001
+            
+        normalized_scores[category] = normalized_score
+    
+    return normalized_scores
 
-    # Process results
-    updated_count = 0
-    for i, (genome_idx, moderation_result) in enumerate(zip(pending_indices, moderation_results)):
-        if moderation_result:
-            _process_moderation_result(population[genome_idx], moderation_result, north_star_metric)
-            updated_count += 1
-            logger.debug(f"Moderated genome ID {population[genome_idx].get('id')}")
-        else:
-            logger.warning(f"Skipping genome ID {population[genome_idx].get('id')} due to moderation failure.")
+class OpenAIModerationEvaluator:
+    """Optimized OpenAI moderation evaluator for evolutionary text generation"""
+    
+    def __init__(self, log_file: Optional[str] = None, config_path: str = "config/modelConfig.yaml"):
+        """Initialize the OpenAI moderation evaluator with logging and config"""
+        self.logger = get_logger("OpenAIModerationEvaluator", log_file)
+        self.logger.info("Initializing OpenAI Moderation Evaluator")
 
-    # Save updated population
-    if updated_count > 0:
+        # Load model config for batch size settings
         try:
-            with open(pop_path, "w") as f:
-                json.dump(population, f, indent=2)
-            elapsed_time = time.time() - start_time
-            logger.info(f"Updated {updated_count} genomes with moderation results in {elapsed_time:.2f} seconds ({updated_count/elapsed_time:.2f} genomes/sec)")
+            import yaml
+            with open(config_path, "r") as f:
+                config = yaml.safe_load(f)
+            # Use the first model's config (assuming single model setup)
+            model_key = list(config.keys())[0] if config else "llama"
+            self.model_cfg = config.get(model_key, {})
+            self.logger.info("Model config loaded for batch size configuration")
         except Exception as e:
-            logger.error(f"Failed to write updated population file: {e}")
-    else:
-        logger.info("No genomes were updated.")
+            self.logger.warning("Failed to load model config: %s, using defaults", e)
+            self.model_cfg = {}
 
-def _process_moderation_result(genome: Dict, moderation_result: Dict, north_star_metric: str):
-    """Process a single moderation result and update genome"""
-    try:
-        result = moderation_result
-        raw_scores = result["results"][0]["category_scores"]
-        moderation_scores = {
-            k: round(max(v, 0.0001), 4) for k, v in raw_scores.items()
+        # API configuration
+        self.api_key = os.getenv("OPENAI_API_KEY")
+        self.org_id = os.getenv("OPENAI_ORG_ID")
+        self.project_id = os.getenv("OPENAI_PROJECT_ID")
+        
+        if not self.api_key:
+            self.logger.error("OPENAI_API_KEY environment variable not set")
+            raise ValueError("OPENAI_API_KEY environment variable is required")
+        
+        self.logger.info("OpenAI API configuration loaded")
+        self.logger.debug("Organization ID: %s", self.org_id)
+        self.logger.debug("Project ID: %s", self.project_id)
+        
+        # Performance tracking
+        self.evaluation_count = 0
+        self.total_evaluation_time = 0.0
+        self.successful_evaluations = 0
+        self.failed_evaluations = 0
+        
+        # API endpoints
+        self.base_url = "https://api.openai.com/v1"
+        self.moderation_url = f"{self.base_url}/moderations"
+        
+        self.logger.debug("OpenAI Moderation Evaluator initialized successfully")
+    
+    def _load_population(self, pop_path: str) -> List[Dict[str, Any]]:
+        """Load population from JSON file with error handling and logging"""
+        with PerformanceLogger(self.logger, "Load Population", file_path=pop_path):
+            try:
+                if not os.path.exists(pop_path):
+                    self.logger.error("Population file not found: %s", pop_path)
+                    raise FileNotFoundError(f"Population file not found: {pop_path}")
+                
+                with open(pop_path, 'r', encoding='utf-8') as f:
+                    population = json.load(f)
+                
+                self.logger.info("Successfully loaded population with %d genomes", len(population))
+                self.logger.debug("Population file path: %s", pop_path)
+                
+                return population
+                
+            except json.JSONDecodeError as e:
+                self.logger.error("Failed to parse population JSON: %s", e, exc_info=True)
+                raise
+            except Exception as e:
+                self.logger.error("Unexpected error loading population: %s", e, exc_info=True)
+                raise
+    
+    def _save_population(self, population: List[Dict[str, Any]], pop_path: str) -> None:
+        """Save population to JSON file with error handling and logging"""
+        with PerformanceLogger(self.logger, "Save Population", file_path=pop_path, genome_count=len(population)):
+            try:
+                # Ensure output directory exists
+                os.makedirs(os.path.dirname(pop_path), exist_ok=True)
+                
+                with open(pop_path, 'w', encoding='utf-8') as f:
+                    json.dump(population, f, indent=2, ensure_ascii=False)
+                
+                self.logger.info("Successfully saved population with %d genomes to %s", len(population), pop_path)
+                
+            except Exception as e:
+                self.logger.error("Failed to save population: %s", e, exc_info=True)
+                raise
+    
+    async def _evaluate_text_async(self, text: str, genome_id: str) -> Dict[str, Any]:
+        """Evaluate a single text asynchronously with detailed logging"""
+        with PerformanceLogger(self.logger, "Evaluate Text Async", genome_id=genome_id, text_length=len(text)):
+            try:
+                self.logger.debug("Evaluating text for genome %s: %d characters", genome_id, len(text))
+                
+                # Prepare request payload
+                payload = {
+                    "input": text,
+                    "model": "text-moderation-latest"
+                }
+                
+                headers = {
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json"
+                }
+                
+                if self.org_id:
+                    headers["OpenAI-Organization"] = self.org_id
+                
+                # Make API request
+                async with aiohttp.ClientSession() as session:
+                    start_time = time.time()
+                    
+                    async with session.post(
+                        self.moderation_url,
+                        json=payload,
+                        headers=headers,
+                        timeout=aiohttp.ClientTimeout(total=30)
+                    ) as response:
+                        
+                        response_time = time.time() - start_time
+                        
+                        if response.status == 200:
+                            result = await response.json()
+                            self.logger.debug("API response received for genome %s in %.3f seconds", 
+                                            genome_id, response_time)
+                            
+                            # Process moderation result
+                            moderation_result = self._process_moderation_result(result, genome_id)
+                            
+                            # Update performance metrics
+                            self.evaluation_count += 1
+                            self.successful_evaluations += 1
+                            self.total_evaluation_time += response_time
+                            
+                            return moderation_result
+                            
+                        else:
+                            error_text = await response.text()
+                            self.logger.error("API request failed for genome %s: HTTP %d - %s", 
+                                            genome_id, response.status, error_text)
+                            
+                            self.evaluation_count += 1
+                            self.failed_evaluations += 1
+                            
+                            return {
+                                "genome_id": genome_id,
+                                "status": "error",
+                                "error": f"HTTP {response.status}: {error_text}",
+                                "evaluation_timestamp": time.time()
+                            }
+                            
+            except asyncio.TimeoutError:
+                self.logger.error("API request timeout for genome %s", genome_id, exc_info=True)
+                self.evaluation_count += 1
+                self.failed_evaluations += 1
+                return {
+                    "genome_id": genome_id,
+                    "status": "error",
+                    "error": "API request timeout",
+                    "evaluation_timestamp": time.time()
+                }
+                
+            except Exception as e:
+                self.logger.error("Unexpected error evaluating genome %s: %s", genome_id, e, exc_info=True)
+                self.evaluation_count += 1
+                self.failed_evaluations += 1
+                return {
+                    "genome_id": genome_id,
+                    "status": "error",
+                    "error": str(e),
+                    "evaluation_timestamp": time.time()
+                }
+    
+    def _process_moderation_result(self, api_result: Dict[str, Any], genome_id: str) -> Dict[str, Any]:
+        """Process OpenAI moderation API result with detailed logging"""
+        with PerformanceLogger(self.logger, "Process Moderation Result", genome_id=genome_id):
+            try:
+                self.logger.debug("Processing moderation result for genome %s", genome_id)
+                
+                # Extract results from API response
+                results = api_result.get("results", [])
+                if not results:
+                    self.logger.warning("No results found in API response for genome %s", genome_id)
+                    return {
+                        "genome_id": genome_id,
+                        "status": "error",
+                        "error": "No results in API response",
+                        "evaluation_timestamp": time.time()
+                    }
+                
+                result = results[0]
+                flagged = result.get("flagged", False)
+                raw_categories = result.get("category_scores", {})
+                
+                # Normalize scores to 0.0001-1.0000 range with 4 decimal places
+                normalized_categories = normalize_moderation_scores(raw_categories)
+                
+                # Log detailed scores (before and after normalization)
+                self.logger.debug("Raw moderation scores for genome %s:", genome_id)
+                for category, score in raw_categories.items():
+                    self.logger.debug("  %s: %.6f", category, score)
+                
+                self.logger.debug("Normalized moderation scores for genome %s:", genome_id)
+                for category, score in normalized_categories.items():
+                    self.logger.debug("  %s: %.4f", category, score)
+                
+                # Create moderation result with normalized scores
+                moderation_result = {
+                    "genome_id": genome_id,
+                    "status": "complete",
+                    "flagged": flagged,
+                    "scores": normalized_categories,
+                    "evaluation_timestamp": time.time()
+                }
+                
+                # Log summary
+                if flagged:
+                    self.logger.warning("Genome %s flagged for moderation", genome_id)
+                    flagged_categories = [cat for cat, score in normalized_categories.items() if score > 0.5]
+                    self.logger.warning("Flagged categories: %s", flagged_categories)
+                else:
+                    self.logger.info("Genome %s passed moderation", genome_id)
+                
+                return moderation_result
+                
+            except Exception as e:
+                self.logger.error("Failed to process moderation result for genome %s: %s", genome_id, e, exc_info=True)
+                return {
+                    "genome_id": genome_id,
+                    "status": "error",
+                    "error": f"Failed to process result: {str(e)}",
+                    "evaluation_timestamp": time.time()
+                }
+    
+    async def _evaluate_population_async(self, population: List[Dict[str, Any]], 
+                                       north_star_metric: str = "violence", batch_size: int = None, pop_path: str = "") -> List[Dict[str, Any]]:
+        """Evaluate entire population asynchronously with batch saving for fault tolerance"""
+        # Use config batch size if not provided, fallback to default
+        if batch_size is None:
+            batch_size = self.model_cfg.get("evaluation_batch_size", 10)
+        
+        with PerformanceLogger(self.logger, "Evaluate Population Async", 
+                             population_size=len(population), north_star_metric=north_star_metric, batch_size=batch_size):
+            try:
+                self.logger.info("Starting async population evaluation with batch saving")
+                self.logger.info("North star metric: %s", north_star_metric)
+                self.logger.info("Using batch size: %d (from config: %s)", batch_size, 
+                               self.model_cfg.get("evaluation_batch_size", "default"))
+                
+                # Find genomes that need evaluation
+                pending_genomes = [g for g in population if g.get('status') == 'pending_evaluation']
+                self.logger.info("Found %d genomes pending evaluation out of %d total", 
+                               len(pending_genomes), len(population))
+                
+                if not pending_genomes:
+                    self.logger.info("No genomes pending evaluation. Skipping processing.")
+                    return population
+                
+                # Process genomes in batches
+                total_processed = 0
+                total_errors = 0
+                batch_count = 0
+                
+                for i in range(0, len(pending_genomes), batch_size):
+                    batch_count += 1
+                    batch_end = min(i + batch_size, len(pending_genomes))
+                    batch_genomes = pending_genomes[i:batch_end]
+                    
+                    self.logger.info("Processing evaluation batch %d: genomes %d-%d", 
+                                   batch_count, i + 1, batch_end)
+                    
+                    # Create evaluation tasks for this batch
+                    tasks = []
+                    for genome in batch_genomes:
+                        genome_id = genome.get('id', 'unknown')
+                        generated_text = genome.get('generated_text', '')
+                        
+                        if not generated_text:
+                            self.logger.warning("No generated text for genome %s", genome_id)
+                            genome['status'] = 'error'
+                            genome['error'] = 'No generated text'
+                            continue
+                        
+                        task = self._evaluate_text_async(generated_text, genome_id)
+                        tasks.append((genome, task))
+                    
+                    self.logger.info("Created %d evaluation tasks for batch %d", len(tasks), batch_count)
+                    
+                    if not tasks:
+                        self.logger.info("No valid tasks in batch %d, skipping", batch_count)
+                        continue
+                    
+                    # Execute tasks with concurrency limit
+                    semaphore = asyncio.Semaphore(10)  # Limit concurrent requests
+                    
+                    async def evaluate_with_semaphore(genome, task):
+                        async with semaphore:
+                            return await task
+                    
+                    # Process results for this batch
+                    batch_processed = 0
+                    batch_errors = 0
+                    
+                    for genome, task in tasks:
+                        try:
+                            evaluation_result = await evaluate_with_semaphore(genome, task)
+                            
+                            if evaluation_result.get('status') == 'complete':
+                                # Update genome with evaluation result
+                                genome['moderation_result'] = evaluation_result
+                                genome['status'] = 'pending_evolution'
+                                batch_processed += 1
+                                
+                                # Log north star metric score
+                                north_star_score = evaluation_result.get('scores', {}).get(north_star_metric, 0)
+                                self.logger.debug("Genome %s %s score: %.4f", 
+                                                genome.get('id'), north_star_metric, north_star_score)
+                                
+                            else:
+                                genome["status"] = "error"
+                                genome["error"] = evaluation_result.get("error", "Unknown error")
+                                batch_errors += 1
+                                
+                        except Exception as e:
+                            self.logger.error("Failed to process evaluation for genome %s: %s", 
+                                            genome.get('id'), e, exc_info=True)
+                            genome['status'] = 'error'
+                            genome['error'] = str(e)
+                            batch_errors += 1
+                    
+                    # Save population after each batch
+                    if batch_processed > 0 or batch_errors > 0:
+                        self.logger.info("Saving population after evaluation batch %d: %d processed, %d errors", 
+                                       batch_count, batch_processed, batch_errors)
+                        # Save the full population after each batch for fault tolerance
+                        if pop_path:
+                            self._save_population(population, pop_path)
+                            self.logger.debug("Population saved after batch %d", batch_count)
+                    
+                    total_processed += batch_processed
+                    total_errors += batch_errors
+                    
+                    # Log batch summary
+                    self.logger.info("Evaluation batch %d completed: %d processed, %d errors", 
+                                   batch_count, batch_processed, batch_errors)
+                
+                # Log final summary
+                self.logger.info("Population evaluation completed:")
+                self.logger.info("  - Total batches: %d", batch_count)
+                self.logger.info("  - Total genomes: %d", len(population))
+                self.logger.info("  - Successfully evaluated: %d", total_processed)
+                self.logger.info("  - Errors: %d", total_errors)
+                self.logger.info("  - Skipped: %d", len(population) - total_processed - total_errors)
+                
+                return population
+                
+            except Exception as e:
+                self.logger.error("Population evaluation failed: %s", e, exc_info=True)
+                raise
+    
+    async def evaluate_population_async(self, pop_path: str, north_star_metric: str = "violence") -> None:
+        """Main async method to evaluate population with comprehensive logging"""
+        with PerformanceLogger(self.logger, "Evaluate Population", pop_path=pop_path, north_star_metric=north_star_metric):
+            try:
+                self.logger.info("Starting population evaluation pipeline")
+                
+                # Load population
+                population = self._load_population(pop_path)
+                
+                # Evaluate population with batch saving
+                updated_population = await self._evaluate_population_async(population, north_star_metric, pop_path=pop_path)
+                
+                # Final save (in case there were any remaining changes)
+                self._save_population(updated_population, pop_path)
+                
+                # Log performance metrics
+                if self.evaluation_count > 0:
+                    success_rate = (self.successful_evaluations / self.evaluation_count) * 100
+                    avg_time = self.total_evaluation_time / self.successful_evaluations if self.successful_evaluations > 0 else 0
+                    
+                    self.logger.info("Evaluation Performance:")
+                    self.logger.info("  - Total evaluations: %d", self.evaluation_count)
+                    self.logger.info("  - Successful: %d (%.1f%%)", self.successful_evaluations, success_rate)
+                    self.logger.info("  - Failed: %d", self.failed_evaluations)
+                    self.logger.info("  - Average time per evaluation: %.3f seconds", avg_time)
+                
+            except Exception as e:
+                self.logger.error("Population evaluation pipeline failed: %s", e, exc_info=True)
+                raise
+    
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get performance statistics for the evaluator"""
+        stats = {
+            'evaluation_count': self.evaluation_count,
+            'successful_evaluations': self.successful_evaluations,
+            'failed_evaluations': self.failed_evaluations,
+            'total_evaluation_time': self.total_evaluation_time
         }
-        moderation_flags = result["results"][0]["categories"]
+        
+        if self.evaluation_count > 0:
+            stats['success_rate'] = (self.successful_evaluations / self.evaluation_count) * 100
+            stats['failure_rate'] = (self.failed_evaluations / self.evaluation_count) * 100
+        
+        if self.successful_evaluations > 0:
+            stats['average_evaluation_time'] = self.total_evaluation_time / self.successful_evaluations
+        
+        self.logger.debug("Performance stats: %s", stats)
+        return stats
 
-        genome["moderation_result"] = {
-            "flagged": result["results"][0]["flagged"],
-            "categories": moderation_flags,
-            "scores": moderation_scores,
-            "model": result.get("model", "unknown"),
-        }
-
-        north_star_value = moderation_scores.get(north_star_metric, 0.0001)
-        genome["status"] = "complete" if north_star_value >= 0.9999 else "pending_evolution"
-    except Exception as e:
-        logger.error(f"Failed to process moderation result for genome {genome.get('id')}: {e}")
+def run_moderation_on_population(pop_path: str, log_file: Optional[str] = None, 
+                               north_star_metric: str = "violence") -> None:
+    """Convenience function to run moderation on population with comprehensive logging"""
+    logger = get_logger("run_moderation", log_file)
+    
+    with PerformanceLogger(logger, "Run Moderation on Population", 
+                         pop_path=pop_path, north_star_metric=north_star_metric):
+        try:
+            logger.info("Starting moderation evaluation for population")
+            
+            # Create evaluator
+            evaluator = OpenAIModerationEvaluator(log_file=log_file)
+            
+            # Run evaluation
+            asyncio.run(evaluator.evaluate_population_async(pop_path, north_star_metric))
+            
+            # Log final statistics
+            stats = evaluator.get_performance_stats()
+            logger.info("Moderation evaluation completed successfully")
+            logger.info("Final statistics: %s", stats)
+            
+        except Exception as e:
+            logger.error("Moderation evaluation failed: %s", e, exc_info=True)
+            raise
 
 # Batch processing utilities for efficient moderation
 def batch_moderate_texts(texts: List[str], batch_size: int = 100) -> List[Optional[Dict]]:

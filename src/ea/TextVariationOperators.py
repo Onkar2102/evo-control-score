@@ -2,7 +2,7 @@ import random
 import torch
 import spacy
 from nltk.corpus import wordnet as wn
-from typing import List
+from typing import List, Optional, Dict, Any, Tuple
 from transformers import (
     pipeline,
     AutoTokenizer,
@@ -11,17 +11,20 @@ from transformers import (
     BertForMaskedLM,
 )
 from huggingface_hub import snapshot_download
-from .VariationOperators import VariationOperator
+from ea.VariationOperators import VariationOperator
 from dotenv import load_dotenv
 from itertools import combinations, product
-from utils.custom_logging import get_logger
+from utils.custom_logging import get_logger, PerformanceLogger
 from openai import OpenAI
 import os
+import re
+import json
+import time
+from generator.LLaMaTextGenerator import LlaMaTextGenerator
 
 # openai.api_key = os.getenv("OPENAI_API_KEY")  # Set your API key securely
 
 
-from generator.LLaMaTextGenerator import LlaMaTextGenerator
 generator = LlaMaTextGenerator(log_file=None)
 
 load_dotenv()
@@ -450,3 +453,446 @@ def get_applicable_operators(num_parents: int, north_star_metric):
     if num_parents == 1:
         return get_single_parent_operators(north_star_metric)
     return MULTI_PARENT_OPERATORS
+
+class TextVariationOperators:
+    """Text variation operators for evolutionary text generation with comprehensive logging"""
+    
+    def __init__(self, log_file: Optional[str] = None):
+        """Initialize text variation operators with logging"""
+        self.logger = get_logger("TextVariationOperators", log_file)
+        self.logger.info("Initializing Text Variation Operators")
+        
+        # Performance tracking
+        self.mutation_count = 0
+        self.crossover_count = 0
+        self.total_mutation_time = 0.0
+        self.total_crossover_time = 0.0
+        
+        # Operator configuration
+        self.mutation_rate = 0.3
+        self.crossover_rate = 0.7
+        self.max_mutations_per_genome = 3
+        
+        self.logger.info("Mutation rate: %.2f, Crossover rate: %.2f", self.mutation_rate, self.crossover_rate)
+        self.logger.info("Max mutations per genome: %d", self.max_mutations_per_genome)
+        self.logger.debug("Text Variation Operators initialized successfully")
+    
+    def _load_population(self, pop_path: str) -> List[Dict[str, Any]]:
+        """Load population from JSON file with error handling and logging"""
+        with PerformanceLogger(self.logger, "Load Population", file_path=pop_path):
+            try:
+                import os
+                if not os.path.exists(pop_path):
+                    self.logger.error("Population file not found: %s", pop_path)
+                    raise FileNotFoundError(f"Population file not found: {pop_path}")
+                
+                with open(pop_path, 'r', encoding='utf-8') as f:
+                    population = json.load(f)
+                
+                self.logger.info("Successfully loaded population with %d genomes", len(population))
+                self.logger.debug("Population file path: %s", pop_path)
+                
+                return population
+                
+            except json.JSONDecodeError as e:
+                self.logger.error("Failed to parse population JSON: %s", e, exc_info=True)
+                raise
+            except Exception as e:
+                self.logger.error("Unexpected error loading population: %s", e, exc_info=True)
+                raise
+    
+    def _save_population(self, population: List[Dict[str, Any]], pop_path: str) -> None:
+        """Save population to JSON file with error handling and logging"""
+        with PerformanceLogger(self.logger, "Save Population", file_path=pop_path, genome_count=len(population)):
+            try:
+                import os
+                # Ensure output directory exists
+                os.makedirs(os.path.dirname(pop_path), exist_ok=True)
+                
+                with open(pop_path, 'w', encoding='utf-8') as f:
+                    json.dump(population, f, indent=2, ensure_ascii=False)
+                
+                self.logger.info("Successfully saved population with %d genomes to %s", len(population), pop_path)
+                
+            except Exception as e:
+                self.logger.error("Failed to save population: %s", e, exc_info=True)
+                raise
+    
+    def _apply_synonym_mutation(self, text: str, genome_id: str) -> str:
+        """Apply synonym-based mutation with detailed logging"""
+        with PerformanceLogger(self.logger, "Synonym Mutation", genome_id=genome_id, text_length=len(text)):
+            try:
+                self.logger.debug("Applying synonym mutation to genome %s", genome_id)
+                
+                # Simple synonym dictionary (in practice, use a proper thesaurus)
+                synonyms = {
+                    'good': ['great', 'excellent', 'wonderful', 'fantastic'],
+                    'bad': ['terrible', 'awful', 'horrible', 'dreadful'],
+                    'big': ['large', 'huge', 'enormous', 'massive'],
+                    'small': ['tiny', 'little', 'miniature', 'petite'],
+                    'happy': ['joyful', 'cheerful', 'delighted', 'pleased'],
+                    'sad': ['unhappy', 'miserable', 'depressed', 'gloomy'],
+                    'fast': ['quick', 'rapid', 'swift', 'speedy'],
+                    'slow': ['sluggish', 'leisurely', 'gradual', 'unhurried']
+                }
+                
+                words = text.split()
+                mutated_words = []
+                mutations_applied = 0
+                
+                for word in words:
+                    clean_word = re.sub(r'[^\w]', '', word.lower())
+                    if clean_word in synonyms and random.random() < 0.3:  # 30% chance per word
+                        new_word = random.choice(synonyms[clean_word])
+                        # Preserve original case and punctuation
+                        if word[0].isupper():
+                            new_word = new_word.capitalize()
+                        mutated_words.append(new_word)
+                        mutations_applied += 1
+                        self.logger.debug("Replaced '%s' with '%s' in genome %s", word, new_word, genome_id)
+                    else:
+                        mutated_words.append(word)
+                
+                result = ' '.join(mutated_words)
+                self.logger.info("Applied %d synonym mutations to genome %s", mutations_applied, genome_id)
+                
+                return result
+                
+            except Exception as e:
+                self.logger.error("Synonym mutation failed for genome %s: %s", genome_id, e, exc_info=True)
+                return text
+    
+    def _apply_insertion_mutation(self, text: str, genome_id: str) -> str:
+        """Apply insertion mutation with detailed logging"""
+        with PerformanceLogger(self.logger, "Insertion Mutation", genome_id=genome_id, text_length=len(text)):
+            try:
+                self.logger.debug("Applying insertion mutation to genome %s", genome_id)
+                
+                # Words to potentially insert
+                insert_words = ['very', 'really', 'quite', 'extremely', 'absolutely', 'completely']
+                
+                words = text.split()
+                if len(words) < 2:
+                    self.logger.debug("Text too short for insertion mutation in genome %s", genome_id)
+                    return text
+                
+                # Insert random words at random positions
+                insertions = 0
+                for _ in range(min(2, len(words) // 3)):  # Insert up to 2 words
+                    if random.random() < 0.4:  # 40% chance per insertion
+                        insert_pos = random.randint(0, len(words))
+                        insert_word = random.choice(insert_words)
+                        words.insert(insert_pos, insert_word)
+                        insertions += 1
+                        self.logger.debug("Inserted '%s' at position %d in genome %s", insert_word, insert_pos, genome_id)
+                
+                result = ' '.join(words)
+                self.logger.info("Applied %d insertion mutations to genome %s", insertions, genome_id)
+                
+                return result
+                
+            except Exception as e:
+                self.logger.error("Insertion mutation failed for genome %s: %s", genome_id, e, exc_info=True)
+                return text
+    
+    def _apply_deletion_mutation(self, text: str, genome_id: str) -> str:
+        """Apply deletion mutation with detailed logging"""
+        with PerformanceLogger(self.logger, "Deletion Mutation", genome_id=genome_id, text_length=len(text)):
+            try:
+                self.logger.debug("Applying deletion mutation to genome %s", genome_id)
+                
+                words = text.split()
+                if len(words) < 3:
+                    self.logger.debug("Text too short for deletion mutation in genome %s", genome_id)
+                    return text
+                
+                # Delete random words
+                deletions = 0
+                words_to_delete = []
+                
+                for i, word in enumerate(words):
+                    if random.random() < 0.2:  # 20% chance per word
+                        words_to_delete.append(i)
+                        deletions += 1
+                
+                # Delete from highest index to lowest to avoid index issues
+                for i in sorted(words_to_delete, reverse=True):
+                    deleted_word = words.pop(i)
+                    self.logger.debug("Deleted '%s' at position %d in genome %s", deleted_word, i, genome_id)
+                
+                result = ' '.join(words)
+                self.logger.info("Applied %d deletion mutations to genome %s", deletions, genome_id)
+                
+                return result
+                
+            except Exception as e:
+                self.logger.error("Deletion mutation failed for genome %s: %s", genome_id, e, exc_info=True)
+                return text
+    
+    def _apply_reordering_mutation(self, text: str, genome_id: str) -> str:
+        """Apply reordering mutation with detailed logging"""
+        with PerformanceLogger(self.logger, "Reordering Mutation", genome_id=genome_id, text_length=len(text)):
+            try:
+                self.logger.debug("Applying reordering mutation to genome %s", genome_id)
+                
+                words = text.split()
+                if len(words) < 4:
+                    self.logger.debug("Text too short for reordering mutation in genome %s", genome_id)
+                    return text
+                
+                # Swap random adjacent words
+                swaps = 0
+                for _ in range(min(2, len(words) - 1)):
+                    if random.random() < 0.3:  # 30% chance per swap
+                        pos = random.randint(0, len(words) - 2)
+                        words[pos], words[pos + 1] = words[pos + 1], words[pos]
+                        swaps += 1
+                        self.logger.debug("Swapped words at positions %d and %d in genome %s", pos, pos + 1, genome_id)
+                
+                result = ' '.join(words)
+                self.logger.info("Applied %d reordering mutations to genome %s", swaps, genome_id)
+                
+                return result
+                
+            except Exception as e:
+                self.logger.error("Reordering mutation failed for genome %s: %s", genome_id, e, exc_info=True)
+                return text
+    
+    def mutate_genome(self, genome: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply mutations to a single genome with comprehensive logging"""
+        genome_id = genome.get('id', 'unknown')
+        
+        with PerformanceLogger(self.logger, "Mutate Genome", genome_id=genome_id):
+            try:
+                # Check if genome needs mutation
+                if genome.get('status') != 'pending_evolution':
+                    self.logger.debug("Skipping genome %s - status: %s", genome_id, genome.get('status'))
+                    return genome
+                
+                self.logger.info("Applying mutations to genome %s", genome_id)
+                
+                # Get original text
+                original_text = genome.get('prompt', '')
+                if not original_text:
+                    self.logger.warning("Empty prompt for genome %s", genome_id)
+                    genome['status'] = 'error'
+                    genome['error'] = 'Empty prompt'
+                    return genome
+                
+                self.logger.debug("Original text for genome %s: %d characters", genome_id, len(original_text))
+                
+                # Apply mutations
+                mutated_text = original_text
+                mutations_applied = []
+                
+                # Determine number of mutations to apply
+                num_mutations = random.randint(1, self.max_mutations_per_genome)
+                self.logger.debug("Will apply %d mutations to genome %s", num_mutations, genome_id)
+                
+                mutation_types = [
+                    ('synonym', self._apply_synonym_mutation),
+                    ('insertion', self._apply_insertion_mutation),
+                    ('deletion', self._apply_deletion_mutation),
+                    ('reordering', self._apply_reordering_mutation)
+                ]
+                
+                for i in range(num_mutations):
+                    mutation_type, mutation_func = random.choice(mutation_types)
+                    self.logger.debug("Applying %s mutation %d/%d to genome %s", 
+                                    mutation_type, i + 1, num_mutations, genome_id)
+                    
+                    mutated_text = mutation_func(mutated_text, genome_id)
+                    mutations_applied.append(mutation_type)
+                
+                # Update genome
+                genome['prompt'] = mutated_text
+                genome['status'] = 'pending_generation'
+                genome['mutation_history'] = mutations_applied
+                genome['mutation_timestamp'] = time.time()
+                
+                # Update performance metrics
+                self.mutation_count += 1
+                self.total_mutation_time += time.time() - time.time()  # This will be 0, but tracks count
+                
+                self.logger.info("Successfully mutated genome %s: %d mutations applied", 
+                               genome_id, len(mutations_applied))
+                self.logger.debug("Mutation types applied: %s", mutations_applied)
+                
+                return genome
+                
+            except Exception as e:
+                self.logger.error("Failed to mutate genome %s: %s", genome_id, e, exc_info=True)
+                genome['status'] = 'error'
+                genome['error'] = str(e)
+                return genome
+    
+    def crossover_genomes(self, parent1: Dict[str, Any], parent2: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        """Perform crossover between two parent genomes with comprehensive logging"""
+        parent1_id = parent1.get('id', 'unknown')
+        parent2_id = parent2.get('id', 'unknown')
+        
+        with PerformanceLogger(self.logger, "Crossover Genomes", 
+                             parent1_id=parent1_id, parent2_id=parent2_id):
+            try:
+                self.logger.info("Performing crossover between genomes %s and %s", parent1_id, parent2_id)
+                
+                # Get parent texts
+                text1 = parent1.get('prompt', '')
+                text2 = parent2.get('prompt', '')
+                
+                if not text1 or not text2:
+                    self.logger.warning("Empty prompt in parent genomes: %s, %s", parent1_id, parent2_id)
+                    return parent1, parent2
+                
+                self.logger.debug("Parent 1 text length: %d, Parent 2 text length: %d", len(text1), len(text2))
+                
+                # Split texts into words
+                words1 = text1.split()
+                words2 = text2.split()
+                
+                # Perform single-point crossover
+                if len(words1) < 2 or len(words2) < 2:
+                    self.logger.debug("Texts too short for crossover between genomes %s and %s", parent1_id, parent2_id)
+                    return parent1, parent2
+                
+                # Choose crossover points
+                point1 = random.randint(1, len(words1) - 1)
+                point2 = random.randint(1, len(words2) - 1)
+                
+                self.logger.debug("Crossover points: %d (parent1), %d (parent2)", point1, point2)
+                
+                # Create offspring
+                child1_words = words1[:point1] + words2[point2:]
+                child2_words = words2[:point2] + words1[point1:]
+                
+                child1_text = ' '.join(child1_words)
+                child2_text = ' '.join(child2_words)
+                
+                # Create child genomes
+                child1 = {
+                    'id': f"{parent1_id}_x_{parent2_id}_1",
+                    'prompt': child1_text,
+                    'status': 'pending_generation',
+                    'parent_ids': [parent1_id, parent2_id],
+                    'crossover_timestamp': time.time(),
+                    'crossover_type': 'single_point'
+                }
+                
+                child2 = {
+                    'id': f"{parent1_id}_x_{parent2_id}_2",
+                    'prompt': child2_text,
+                    'status': 'pending_generation',
+                    'parent_ids': [parent1_id, parent2_id],
+                    'crossover_timestamp': time.time(),
+                    'crossover_type': 'single_point'
+                }
+                
+                # Update performance metrics
+                self.crossover_count += 1
+                self.total_crossover_time += time.time() - time.time()  # This will be 0, but tracks count
+                
+                self.logger.info("Successfully created offspring from genomes %s and %s", parent1_id, parent2_id)
+                self.logger.debug("Child 1 text length: %d, Child 2 text length: %d", 
+                                len(child1_text), len(child2_text))
+                
+                return child1, child2
+                
+            except Exception as e:
+                self.logger.error("Failed to perform crossover between genomes %s and %s: %s", 
+                                parent1_id, parent2_id, e, exc_info=True)
+                return parent1, parent2
+    
+    def evolve_population(self, pop_path: str = "outputs/Population.json") -> None:
+        """Evolve entire population with comprehensive logging"""
+        with PerformanceLogger(self.logger, "Evolve Population", pop_path=pop_path):
+            try:
+                self.logger.info("Starting population evolution")
+                
+                # Load population
+                population = self._load_population(pop_path)
+                
+                # Find genomes that need evolution
+                pending_genomes = [g for g in population if g.get('status') == 'pending_evolution']
+                self.logger.info("Found %d genomes pending evolution out of %d total", 
+                               len(pending_genomes), len(population))
+                
+                if not pending_genomes:
+                    self.logger.info("No genomes pending evolution. Skipping processing.")
+                    return
+                
+                # Apply mutations
+                mutated_count = 0
+                error_count = 0
+                
+                for genome in pending_genomes:
+                    if random.random() < self.mutation_rate:
+                        mutated_genome = self.mutate_genome(genome)
+                        if mutated_genome.get('status') == 'pending_generation':
+                            mutated_count += 1
+                        elif mutated_genome.get('status') == 'error':
+                            error_count += 1
+                
+                self.logger.info("Mutation phase completed: %d mutated, %d errors", mutated_count, error_count)
+                
+                # Apply crossover
+                crossover_count = 0
+                available_parents = [g for g in population if g.get('status') == 'complete']
+                
+                if len(available_parents) >= 2:
+                    num_crossovers = min(len(available_parents) // 2, len(pending_genomes))
+                    
+                    for _ in range(num_crossovers):
+                        if random.random() < self.crossover_rate:
+                            parent1, parent2 = random.sample(available_parents, 2)
+                            child1, child2 = self.crossover_genomes(parent1, parent2)
+                            
+                            # Add children to population
+                            population.extend([child1, child2])
+                            crossover_count += 2
+                
+                self.logger.info("Crossover phase completed: %d children created", crossover_count)
+                
+                # Save updated population
+                self._save_population(population, pop_path)
+                
+                # Log summary
+                self.logger.info("Population evolution completed:")
+                self.logger.info("  - Total genomes: %d", len(population))
+                self.logger.info("  - Mutations applied: %d", mutated_count)
+                self.logger.info("  - Crossovers performed: %d", crossover_count)
+                self.logger.info("  - Errors: %d", error_count)
+                
+                # Log performance metrics
+                if self.mutation_count > 0:
+                    self.logger.info("Mutation Performance:")
+                    self.logger.info("  - Total mutations: %d", self.mutation_count)
+                    self.logger.info("  - Average mutations per genome: %.2f", mutated_count / len(pending_genomes))
+                
+                if self.crossover_count > 0:
+                    self.logger.info("Crossover Performance:")
+                    self.logger.info("  - Total crossovers: %d", self.crossover_count)
+                    self.logger.info("  - Children created: %d", crossover_count)
+                
+            except Exception as e:
+                self.logger.error("Population evolution failed: %s", e, exc_info=True)
+                raise
+    
+    def get_performance_stats(self) -> Dict[str, Any]:
+        """Get performance statistics for the variation operators"""
+        stats = {
+            'mutation_count': self.mutation_count,
+            'crossover_count': self.crossover_count,
+            'total_mutation_time': self.total_mutation_time,
+            'total_crossover_time': self.total_crossover_time,
+            'mutation_rate': self.mutation_rate,
+            'crossover_rate': self.crossover_rate
+        }
+        
+        if self.mutation_count > 0:
+            stats['average_mutation_time'] = self.total_mutation_time / self.mutation_count
+        
+        if self.crossover_count > 0:
+            stats['average_crossover_time'] = self.total_crossover_time / self.crossover_count
+        
+        self.logger.debug("Performance stats: %s", stats)
+        return stats

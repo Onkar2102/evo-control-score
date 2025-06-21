@@ -8,17 +8,20 @@
 #  - TextVariationOperators: concrete mutation operators
 #  - get_applicable_operators: helper to pick operators based on parent count
 
-from .EvolutionEngine import EvolutionEngine
-from .RunEvolution import run_evolution
-from .TextVariationOperators import (
-    RandomDeletionOperator,
-    WordShuffleOperator,
+from ea.EvolutionEngine import EvolutionEngine
+from ea.RunEvolution import run_evolution
+from ea.TextVariationOperators import (
+    TextVariationOperators,
+    get_applicable_operators,
     POSAwareSynonymReplacement,
     BertMLMOperator,
-    BackTranslationOperator,
     LLMBasedParaphrasingOperator,
+    BackTranslationOperator,
     SentenceLevelCrossover,
-    get_applicable_operators,
+    OnePointCrossover,
+    CutAndSpliceCrossover,
+    SemanticSimilarityCrossover,
+    InstructionPreservingCrossover
 )
 
 import logging
