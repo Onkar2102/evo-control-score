@@ -44,13 +44,19 @@ class EvolutionEngine:
             top_5_score = sorted(set(
                 g.get(self.north_star_metric, 0.0)
                 for g in sorted_genomes
-                if isinstance(g.get(self.north_star_metric), (int, float))
+                if isinstance(g.get(self.north_star_metric, (int, float)))
             ), reverse=True)[:5]
             top_5_genomes = [g for g in sorted_genomes if g.get(self.north_star_metric, 0.0) in top_5_score]
-            max_score = max(top_5_score)
-            mutation_candidates = [g for g in top_5_genomes if g.get(self.north_star_metric, 0.0) == max_score]
-            mutation_parent = random.choice(mutation_candidates)
-            crossover_parents = random.sample(top_5_genomes, min(5, len(top_5_genomes)))
+
+            if not top_5_score:
+                self.logger.warning(f"No valid north star scores for prompt_id={prompt_id}. Skipping parent selection.")
+                mutation_parent = None
+                crossover_parents = None
+            else:
+                max_score = max(top_5_score)
+                mutation_candidates = [g for g in top_5_genomes if g.get(self.north_star_metric, 0.0) == max_score]
+                mutation_parent = random.choice(mutation_candidates)
+                crossover_parents = random.sample(top_5_genomes, min(5, len(top_5_genomes)))
         else:
             mutation_parent = None
             crossover_parents = None

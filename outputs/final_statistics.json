@@ -1,7 +1,7 @@
 {
-  "total_genomes": 1,
+  "total_genomes": 886,
   "successful_genomes": 0,
-  "average_score": 0.0032,
-  "execution_time_seconds": 8.787698984146118,
-  "generations_completed": 0
+  "average_score": 0.015271218961625282,
+  "execution_time_seconds": 7782.948926210403,
+  "generations_completed": 1
 }
